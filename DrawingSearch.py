@@ -1,6 +1,7 @@
 import sys
 import os
 import io
+import re
 import datetime
 import base64
 import glob
@@ -18,7 +19,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.3"  # 版本号
+ver = "1.1.5"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -29,6 +30,8 @@ window_expanded = False  # 设置标志位，表示窗口是否已经扩展
 window_width = 340
 expand_window_width = 600
 window_height = 315
+stop_event = threading.Event()
+active_threads = set()
 shortcut_frame = None  # 用于快捷访问按钮的框架
 default_parts_path = os.path.normpath("K:\\PARTS")
 vault_cache = os.path.normpath("C:\\_Vault Working Folder\\Designs\\PARTS")  # Vault 缓存目录
@@ -256,20 +259,28 @@ def select_history(event, listbox):
     history_listbox.destroy()
     history_listbox = None
 
+def disable_search_button():
+    """禁用所有搜索按钮"""
+    search_btn.config(state=tk.DISABLED)
+    lucky_btn.config(state=tk.DISABLED)
+    search_3d_btn.config(state=tk.DISABLED)
+    search_cache_btn.config(state=tk.DISABLED)
+
+def enable_search_button():
+    """启用所有搜索按钮"""
+    search_btn.config(state=tk.NORMAL)
+    lucky_btn.config(state=tk.NORMAL)
+    search_3d_btn.config(state=tk.NORMAL)
+    search_cache_btn.config(state=tk.NORMAL)
+
 def search_pdf_files():
     """搜索目录下的 PDF 文件"""
-    if not feeling_lucky_pressed:
-        search_btn.config(state=tk.DISABLED)  # 禁用按钮
-    else:
-        lucky_btn.config(state=tk.DISABLED)  # 禁用按钮
+    disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
         show_warning_message("Please enter part or assembly number!")
-        if not feeling_lucky_pressed:
-            search_btn.config(state=tk.NORMAL)  # 启用按钮
-        else:
-            lucky_btn.config(state=tk.NORMAL)  # 启用按钮
+        enable_search_button() #启用搜索按钮
         return
 
     save_search_history(query)  # 保存搜索记录
@@ -284,29 +295,45 @@ def search_pdf_files():
     if not os.path.exists(search_directory):
         show_warning_message(f"Path does not exist! {search_directory}")
         show_result_list(None) # 目录不存在就清空已有搜索结果
-        if not feeling_lucky_pressed:
-            search_btn.config(state=tk.NORMAL)  # 启用按钮
-        else:
-            lucky_btn.config(state=tk.NORMAL)  # 启用按钮
+        enable_search_button() #启用搜索按钮
         return
 
     # 执行搜索
     show_warning_message(f"Searching for \"{query}\", please wait...")
+    query = query.lower()
+    # 对STK的project number进行特殊处理
+    if query.startswith("stk") and len(query) > 3:
+        if query[3] == '-' or query[3] == ' ':
+            query = query[:3] + '.*' + query[4:]
+        else:
+            query = query[:3] + '.*' + query[3:]
+
+    stop_event.clear()  # 确保上一次的停止信号被清除
     search_thread = threading.Thread(target=search_pdf_files_thread, args=(query, search_directory,))
     search_thread.start()
 
 def search_pdf_files_thread(query, search_directory):
     """使用多线程搜索目录下的 PDF 文件"""
+    global active_threads
+    thread = threading.current_thread()
+    active_threads.add(thread)
     try:
         is_feeling_lucky = feeling_lucky_pressed
+        regex_pattern = re.compile(query, re.IGNORECASE)
         result_files = []
         for root_dir, _, files in os.walk(search_directory):
+            if stop_event.is_set():  # 检查是否需要终止
+                break
             for file in files:
-                if file.endswith(".pdf") and query.lower() in file.lower():
+                if stop_event.is_set():  # 检查是否需要终止
+                    break
+                if file.endswith(".pdf") and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
                     result_files.append((file, create_time, file_path))
 
+        if stop_event.is_set():  # 检查停止标志并返回
+            return
         # 排序结果（按创建时间倒序）
         result_files.sort(key=lambda x: x[1], reverse=True)
 
@@ -315,30 +342,34 @@ def search_pdf_files_thread(query, search_directory):
         # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
         if is_feeling_lucky:
             if result_files:
-                root.after(0, lambda: open_file(file_path=result_files[0][2]))
+                file_path = result_files[0][2]  # 复制file_path的值传给open_file，避免result_files被修改后值为空
+                root.after(0, lambda: open_file(file_path=file_path))
                 result_files = []
                 root.after(0, lambda: show_result_list(result_files))
             else:
                 root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
-            root.after(0, lambda: lucky_btn.config(state=tk.NORMAL))  # 启用按钮
+            root.after(0, lambda: enable_search_button()) #启用搜索按钮
             return
 
         if not result_files:
             root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
 
         root.after(0, lambda: show_result_list(result_files))
-        root.after(0, lambda: search_btn.config(state=tk.NORMAL))  # 启用按钮
+        root.after(0, lambda: enable_search_button())  # 启用搜索按钮
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
 
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
+
 def search_3d_files():
     """搜索目录下的 3D 文件(ipt或者iam)"""
-    search_3d_btn.config(state=tk.DISABLED)  # 禁用按钮
+    disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
         show_warning_message("Please enter part or assembly number!")
-        search_3d_btn.config(state=tk.NORMAL)  # 启用按钮
+        enable_search_button() #启用搜索按钮
         return
 
     save_search_history(query)  # 保存搜索记录
@@ -353,107 +384,260 @@ def search_3d_files():
     if not os.path.exists(search_directory):
         show_warning_message(f"Path does not exist! {search_directory}")
         show_result_list(None) # 目录不存在就清空已有搜索结果
-        search_3d_btn.config(state=tk.NORMAL)  # 启用按钮
+        enable_search_button() #启用搜索按钮
         return
 
     # 执行搜索
     show_warning_message(f"Searching for \"{query}\", please wait...")
+
+    stop_event.clear()  # 确保上一次的停止信号被清除
     search_thread = threading.Thread(target=search_3d_files_thread, args=(query, search_directory,))
     search_thread.start()
 
 def search_3d_files_thread(query, search_directory):
+    global active_threads
+    thread = threading.current_thread()
+    active_threads.add(thread)
     try:
         """使用多线程搜索目录下的 3D 文件"""
         result_files = []
         for root_dir, _, files in os.walk(search_directory):
+            if stop_event.is_set():  # 检查是否需要终止
+                break
             for file in files:
-                if file.endswith(".iam") and query.lower() in file.lower():
+                if stop_event.is_set():  # 检查是否需要终止
+                    break
+                if (file.endswith(".iam") or file.endswith(".ipt")) and query.lower() in file.lower():
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
                     result_files.append((file, create_time, file_path))
 
-        for root_dir, _, files in os.walk(search_directory):
-            for file in files:
-                if file.endswith(".ipt") and query.lower() in file.lower():
-                    file_path = os.path.join(root_dir, file)
-                    create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files.append((file, create_time, file_path))
-
+        if stop_event.is_set():  # 检查停止标志并返回
+            return
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
+
         if not result_files:
             root.after(0, lambda: show_warning_message("No matching 3D drawing found!"))
+
         # 排序结果（按文件名排序）
         result_files.sort(key=lambda x: x[0])
         root.after(0, lambda: show_result_list(result_files))
-        root.after(0, lambda: search_3d_btn.config(state=tk.NORMAL))  # 启用按钮
+        root.after(0, lambda: enable_search_button())  # 启用搜索按钮
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
 
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
+
 def search_vault_cache():
     """搜索Vault缓存目录下的 3D 文件(ipt或者iam)"""
-    search_cache_btn.config(state=tk.DISABLED)  # 禁用按钮
+    disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
         show_warning_message("Please enter part or assembly number!")
-        search_cache_btn.config(state=tk.NORMAL)  # 启用按钮
+        enable_search_button() #启用搜索按钮
         return
 
     save_search_history(query)  # 保存搜索记录
 
-    # 判断 query 字符串的第三位是否是数字，如果是数字，作为project number进行搜索
+    matching_directories = []
+    search_directory = None
+    real_query = None
+
     if len(query) > 2 and query[2].isdigit():
+        # 用户输入的是project number，可能包括2012789，2012789-100，2012789 100等格式
+        # 也可能输入不完整的数字，在后面匹配目录时，用通配符*去匹配
+        if " " in query:
+            # 如果输入的project number带空格，替换为空格为-
+            query = query.replace(" ", "-")
         if '-' in query:
+            # 查询字段带后缀，提取project number
             proj_no = query.split('-')[0]
         else:
             proj_no = query
-
-        sub_dir = "S" + proj_no
-        prefix = "S"
-        matching_directories = glob.glob(os.path.join(vault_cache, prefix, sub_dir + '*'))
-        if matching_directories:
-            search_directory = matching_directories[0]
+        sub_dir = proj_no
+    elif query.lower().startswith("stk"):
+        # 用户输入的是stk number，可能包括stk-100，stk 100，stk100等格式
+        if len(query) > 3:
+            if query[3] == '-' or query[3] == ' ':
+                sub_dir = query[:3] + '*' + query[4:]
+            else:
+                sub_dir = query[:3] + '*' + query[3:]
         else:
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!")
-            show_result_list(None) # 目录不存在就清空已有搜索结果
-            search_cache_btn.config(state=tk.NORMAL)
-            return
-    else:
-        # 作为part number或者assembly number，提取前两位字符并更新搜索路径
+            # 只输入了stk，没有具体的stk number
+            sub_dir = query[:3] + '*'
+    elif len(query) > 2 and query[0].isdigit() and not query[2].isdigit():
+        # 用户输入的是part number或者assembly number，可能是22A010123或者13B010456
+        # 需要到PARTS/22这样的路径下去搜索
         prefix = query[:2]
         search_directory = os.path.join(vault_cache, prefix)
         if not os.path.exists(search_directory):
             show_warning_message("No matching 3D drawings are cached. Check in Vault!")
             show_result_list(None) # 目录不存在就清空已有搜索结果
-            search_cache_btn.config(state=tk.NORMAL)  # 启用按钮
+            enable_search_button() #启用搜索按钮
+            return
+    else:
+        # 任何其他字符串，都当作是project name去匹配，去PARTS/S路径下查找匹配的目录
+        for root_dir, dirs, _ in os.walk(os.path.join(vault_cache, "S")):
+            for dir_name in dirs:
+                if query.lower() in dir_name.lower():
+                    matching_directories.append(os.path.join(root_dir, dir_name))
+        # 根据匹配到的目录数量进行处理
+        if len(matching_directories) == 1:
+            search_directory = matching_directories[0]
+            if not query[0].isdigit() and not query.lower().startswith("stk"):
+                sub_dir = os.path.basename(search_directory)
+                path_split = sub_dir.find(" ")
+                if path_split != -1:
+                    real_query = sub_dir[1:path_split]
+                else:
+                    real_query = sub_dir[1:]
+        elif len(matching_directories) > 1:
+            # 如果有匹配到多个目录，让用户选择
+            selected_dir = ask_user_to_select_directory(matching_directories)
+            if selected_dir:
+                search_directory = selected_dir
+                sub_dir = os.path.basename(search_directory)
+                if sub_dir.lower().startswith("stk"):
+                    # 选择了STK开头的project
+                    if sub_dir[3] == " " and sub_dir[4].isdigit():
+                        # 处理“STK 103 Project Name” 这样的project number
+                        sub_dir_split = sub_dir.split(" ")
+                        if len(sub_dir_split) >= 2:
+                            query = " ".join(sub_dir_split[:2])
+                    else:
+                        # 处理“STK-103 Project Name” 这样的project number
+                        end_index = sub_dir.find(" ")
+                        if end_index != -1:
+                            query = sub_dir[0:end_index]
+                        else:
+                            # 处理"STK103"这样的project number
+                            query = sub_dir
+                else:
+                    if sub_dir.lower().startswith("s"):
+                        # 选择了S开头的project
+                        end_index = sub_dir.find(" ")
+                        if end_index != -1:
+                            query = sub_dir[1:end_index]
+                    else:
+                        # 如果存在既不是STK开头的，也不是S开头的project目录
+                        end_index = sub_dir.find(" ")
+                        if end_index != -1:
+                            query = sub_dir[0:end_index]
+                        else:
+                            query = sub_dir
+            else:
+                show_warning_message("Cancelled!")
+                enable_search_button() #启用搜索按钮
+                return
+        else:
+            # 如果用户输入的关键字匹配不到任何project，直接当作子目录去PARTS下搜索，如PARTS/XX
+            prefix = query[:2]
+            search_directory = os.path.join(vault_cache, prefix)
+            if not os.path.exists(search_directory):
+                show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+                show_result_list(None) # 目录不存在就清空已有搜索结果
+                enable_search_button() #启用搜索按钮
+                return
+
+    if not search_directory:
+        prefix = "S"
+        matching_directories = glob.glob(os.path.join(vault_cache, prefix, '*' + sub_dir + '*'))
+        # 根据匹配到的目录数量进行处理
+        if len(matching_directories) == 1:
+            search_directory = matching_directories[0]
+        elif len(matching_directories) > 1:
+            # 如果有匹配到多个目录，让用户选择
+            selected_dir = ask_user_to_select_directory(matching_directories)
+            if selected_dir:
+                search_directory = selected_dir
+                sub_dir = os.path.basename(search_directory)
+                if sub_dir.lower().startswith("stk"):
+                    # 选择了STK开头的project
+                    if sub_dir[3] == " " and sub_dir[4].isdigit():
+                        # 处理“STK 103 Project Name” 这样的project number
+                        sub_dir_split = sub_dir.split(" ")
+                        if len(sub_dir_split) >= 2:
+                            query = " ".join(sub_dir_split[:2])
+                    else:
+                        # 处理“STK-103 Project Name” 这样的project number
+                        end_index = sub_dir.find(" ")
+                        if end_index != -1:
+                            query = sub_dir[0:end_index]
+                        else:
+                            # 处理"STK103"这样的project number
+                            query = sub_dir
+                else:
+                    if sub_dir.lower().startswith("s"):
+                        # 选择了S开头的project
+                        end_index = sub_dir.find(" ")
+                        if end_index != -1:
+                            query = sub_dir[1:end_index]
+                    else:
+                        # 如果存在既不是STK开头的，也不是S开头的project目录
+                        end_index = sub_dir.find(" ")
+                        if end_index != -1:
+                            query = sub_dir[0:end_index]
+                        else:
+                            query = sub_dir
+            else:
+                show_warning_message("Cancelled!")
+                enable_search_button() #启用搜索按钮
+                return
+        else:
+            show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+            show_result_list(None) # 目录不存在就清空已有搜索结果
+            enable_search_button() #启用搜索按钮
             return
 
     # 执行搜索
     show_warning_message(f"Searching for \"{query}\", please wait...")
+    if query.lower().startswith("stk"):
+        if len(query) > 3:
+            if query[3] == '-' or query[3] == ' ':
+                query = query[:3] + '*' + query[4:]
+            else:
+                query = query[:3] + '*' + query[3:]
+        else:
+            # 只输入了stk，没有具体的stk number
+            query = query[:3] + '*'
+    
+    if real_query:
+        query = real_query
+
+    stop_event.clear()  # 确保上一次的停止信号被清除
     search_thread = threading.Thread(target=search_vault_cache_thread, args=(query, search_directory,))
     search_thread.start()
 
 def search_vault_cache_thread(query, search_directory):
+    global active_threads
+    thread = threading.current_thread()
+    active_threads.add(thread)
     try:
         """使用多线程搜索Vault缓存目录下的 3D 文件"""
         result_files = []
+        # 替换通配符为正则表达式
+        regex_pattern = re.compile(query.replace("*", ".*"), re.IGNORECASE)
         for root_dir, _, files in os.walk(search_directory):
+            if stop_event.is_set():  # 检查是否需要终止
+                break
             for file in files:
-                if file.endswith(".iam") and query.lower() in file.lower():
+                if stop_event.is_set():  # 检查是否需要终止
+                    break
+                if (file.endswith(".iam") or file.endswith(".ipt")) and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
                     result_files.append((file, create_time, file_path))
 
-        for root_dir, _, files in os.walk(search_directory):
-            for file in files:
-                if file.endswith(".ipt") and query.lower() in file.lower():
-                    file_path = os.path.join(root_dir, file)
-                    create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files.append((file, create_time, file_path))
-
+        if stop_event.is_set():  # 检查停止标志并返回
+            return
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
+
         if not result_files:
-            root.after(0, lambda: show_warning_message("No matching 3D drawing cached to the local disk!"))
+            root.after(0, lambda: show_warning_message("No matching 3D drawings are cached. Check in Vault!"))
+        else:
+            root.after(0, lambda: show_warning_message("Tip: Searched from cache, may not be the latest update!"))
         if len(query) > 2 and query[2].isdigit():
             # 如果是project number，按文件名正序排列
             result_files.sort(key=lambda x: x[0])
@@ -462,10 +646,87 @@ def search_vault_cache_thread(query, search_directory):
             result_files.sort(key=lambda x: x[1], reverse=True)
 
         root.after(0, lambda: show_result_list(result_files))
-        root.after(0, lambda: search_cache_btn.config(state=tk.NORMAL))  # 启用按钮
-        root.after(0, lambda: show_warning_message("Tip: Searched from cache, may not be the latest update!"))
+        root.after(0, lambda: enable_search_button())  # 启用搜索按钮
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
+
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
+
+def ask_user_to_select_directory(directories):
+    """弹出对话框让用户选择project目录"""
+
+    def on_double_click(event):
+        # 双击选择
+        selected_index = event.widget.curselection()
+        if selected_index:
+            selected_dir[0] = directories[selected_index[0]]
+            choice_win.destroy()
+
+    def on_select():
+        # 按钮选择
+        selected_index = listbox.curselection()
+        if selected_index:
+            selected_dir[0] = directories[selected_index[0]]
+            choice_win.destroy()
+
+    choice_win = tk.Toplevel(root)
+    choice_win.withdraw()  # 先隐藏窗口
+    choice_win.attributes("-topmost", True)
+    choice_win.tk.call("wm", "iconphoto", choice_win._w, icon) # 设置窗口图标（复用主窗口图标）
+    choice_win.title("Select Project")
+    choice_win.geometry("280x200")
+    choice_win.resizable(False, False)
+
+    # 窗口居中
+    choice_win.update_idletasks()
+    window_width = choice_win.winfo_width()
+    window_height = choice_win.winfo_height()
+    position_right = int(choice_win.winfo_screenwidth()/2 - window_width/2)
+    position_down = int(choice_win.winfo_screenheight()/3 - window_height/2)
+    choice_win.geometry(f"+{position_right}+{position_down}")
+    choice_win.deiconify() # 显示窗口
+
+    # 主容器
+    frame = tk.Frame(choice_win)
+    frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+
+    # 提示文本
+    label = tk.Label(frame, text="Multiple projects were found, please select:", anchor="w")
+    label.pack(fill=tk.X)
+
+    # 目录列表框
+    list_frame = tk.Frame(frame)
+    list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+    listbox = tk.Listbox(list_frame, width=20, height=6, font=("Arial", 10))
+    listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5)
+
+    # 创建Scrollbar并将其与Listbox关联
+    scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    listbox.config(yscrollcommand=scrollbar.set)
+
+    # 填充目录列表
+    for path in directories:
+        display_name = os.path.basename(path)  # 只显示目录名
+        if display_name.lower().startswith("s") and not display_name.lower().startswith("stk"):
+            display_name = display_name[1:]
+        listbox.insert(tk.END, f"{display_name}")
+
+    selected_dir = [None]  # 用列表存储选择结果
+    listbox.bind("<Double-1>", on_double_click)  # 双击事件
+    btn_frame = tk.Frame(frame)
+    btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=3)
+
+    cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=choice_win.destroy)
+    cancel_btn.pack(side=tk.RIGHT, padx=0)
+
+    select_btn = tk.Button(btn_frame, text="Select Project", width=12, command=on_select)
+    select_btn.pack(side=tk.RIGHT, padx=15)
+
+    # 等待窗口关闭
+    choice_win.wait_window()
+    return selected_dir[0]
 
 def show_result_list(result_files):
     """显示搜索结果"""
@@ -536,10 +797,20 @@ def show_about():
 def show_about():
     # 创建自定义关于窗口
     about_win = tk.Toplevel(root)
+    about_win.withdraw()  # 先隐藏窗口
     about_win.attributes("-topmost", True)
     about_win.title("About")
     about_win.geometry("380x280")
     about_win.resizable(False, False)
+
+    # 窗口居中
+    about_win.update_idletasks()
+    window_width = about_win.winfo_width()
+    window_height = about_win.winfo_height()
+    position_right = int(about_win.winfo_screenwidth()/2 - window_width/2)
+    position_down = int(about_win.winfo_screenheight()/3 - window_height/2)
+    about_win.geometry(f"+{position_right}+{position_down}")
+    about_win.deiconify() # 显示窗口
     
     # 设置窗口图标（复用主窗口图标）
     about_win.tk.call("wm", "iconphoto", about_win._w, icon)
@@ -599,14 +870,6 @@ def show_about():
     ok_button = tk.Button(about_win, text="OK", width=12, height=1, command=about_win.destroy)
     ok_button.pack(padx=20, pady=15, side=tk.RIGHT)
 
-    # 窗口居中
-    about_win.update_idletasks()
-    window_width = about_win.winfo_width()
-    window_height = about_win.winfo_height()
-    position_right = int(about_win.winfo_screenwidth()/2 - window_width/2)
-    position_down = int(about_win.winfo_screenheight()/3 - window_height/2)
-    about_win.geometry(f"+{position_right}+{position_down}")
-
 def send_email():
     """打开默认邮件客户端发送邮件"""
     import webbrowser
@@ -618,8 +881,23 @@ def send_email():
 def reset_window():
     """恢复主窗口到初始状态"""
     global result_frame, results_tree, history_listbox, window_expanded, shortcut_frame
+
+    # 触发停止事件
+    stop_event.set()
+
+    # 等待所有线程结束
+    for thread in list(active_threads):
+        thread.join(timeout=0.5)  # 最多等 0.5 秒
+    
+    # 清除所有线程引用
+    active_threads.clear()
+    
+    # 重置停止事件，以便下一次搜索可以正常启动
+    stop_event.clear()
+
     entry.delete(0, tk.END)  # 清空输入框
     hide_warning_message()  # 清除警告信息
+    enable_search_button() # 启用搜索按钮
     if result_frame:
         result_frame.destroy()
         result_frame = None
@@ -748,19 +1026,20 @@ def create_entry_context_menu(entry_widget):
 # 创建主窗口
 try:
     root = tk.Tk()
+    root.withdraw()  # 先隐藏窗口
     # 将 Base64 解码为二进制
     icon_data = base64.b64decode(ICON_BASE64)
     # 通过 BytesIO 读取 ICO 图标
     icon_image = Image.open(io.BytesIO(icon_data))
     icon = ImageTk.PhotoImage(icon_image)
-    # 窗口居中偏上显示
-    center_window(root, window_width, window_height)
-    root.title("Drawing Search")
     # 设置窗口图标
     root.tk.call("wm", "iconphoto", root._w, icon)
+    root.title("Drawing Search")
     root.geometry(f"{window_width}x{window_height}")  # 初始窗口大小
-
     root.resizable(False, False)
+    # 窗口居中偏上显示
+    center_window(root, window_width, window_height)
+    root.deiconify() # 显示窗口
     
     # 输入框和标签分开为两行
     label_frame = tk.Frame(root)
@@ -818,12 +1097,12 @@ try:
     # Search vault cache 按钮
     search_cache_btn = tk.Button(button_frame, text="Search in Vault Cache", width=18, command=search_vault_cache)
     search_cache_btn.grid(row=1, column=1, padx=15, pady=10)
-    Tooltip(search_cache_btn, lambda: "Search 3D drawings (.iam/.ipt) from local Vault cache", delay=500)
+    Tooltip(search_cache_btn, lambda: "Search 3D drawings (.iam/.ipt) from local Vault cache\rSupport searching by project name", delay=500)
 
     # Reset 按钮
     reset_btn = tk.Button(button_frame, text="Reset", width=18, command=reset_window)
     reset_btn.grid(row=2, column=0, padx=15, pady=8)
-    Tooltip(reset_btn, lambda: "Reset the window to the initial state", delay=500)
+    Tooltip(reset_btn, lambda: "Reset the window to default and stop the current search", delay=500)
 
     # 扩展按钮
     expand_btn = tk.Button(button_frame, text="Quick Access   >>", width=18, command=toggle_window_size)
