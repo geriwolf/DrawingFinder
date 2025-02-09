@@ -280,7 +280,7 @@ def search_pdf_files():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message("Please enter part or assembly number!")
+        show_warning_message("Please enter any number or project name!")
         enable_search_button() #启用搜索按钮
         return
 
@@ -369,7 +369,7 @@ def search_3d_files():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message("Please enter part or assembly number!")
+        show_warning_message("Please enter any number or project name!")
         enable_search_button() #启用搜索按钮
         return
 
@@ -436,7 +436,7 @@ def search_vault_cache():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message("Please enter part or assembly number!")
+        show_warning_message("Please enter any number or project name!")
         enable_search_button() #启用搜索按钮
         return
 
