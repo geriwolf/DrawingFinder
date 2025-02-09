@@ -19,7 +19,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.5"  # 版本号
+ver = "1.1.6"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -27,7 +27,8 @@ results_tree = None  # 搜索结果的 Treeview 控件
 history_listbox = None  # 用于显示搜索历史的列表框
 feeling_lucky_pressed = False  # 标志位，用于 "I'm Feeling Lucky!" 按钮
 window_expanded = False  # 设置标志位，表示窗口是否已经扩展
-window_width = 340
+about_window_open = False # about窗口是否打开的标志位
+window_width = 345
 expand_window_width = 600
 window_height = 315
 stop_event = threading.Event()
@@ -692,7 +693,7 @@ def ask_user_to_select_directory(directories):
     frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
 
     # 提示文本
-    label = tk.Label(frame, text="Multiple projects were found, please select:", anchor="w")
+    label = tk.Label(frame, text="Multiple projects were found, please select:", font=("Arial", 9), anchor="w")
     label.pack(fill=tk.X)
 
     # 目录列表框
@@ -718,10 +719,10 @@ def ask_user_to_select_directory(directories):
     btn_frame = tk.Frame(frame)
     btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=3)
 
-    cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=choice_win.destroy)
+    cancel_btn = tk.Button(btn_frame, text="Cancel", font=("Arial", 9), width=8, command=choice_win.destroy)
     cancel_btn.pack(side=tk.RIGHT, padx=0)
 
-    select_btn = tk.Button(btn_frame, text="Select Project", width=12, command=on_select)
+    select_btn = tk.Button(btn_frame, text="Select Project", font=("Arial", 9), width=12, command=on_select)
     select_btn.pack(side=tk.RIGHT, padx=15)
 
     # 等待窗口关闭
@@ -745,7 +746,7 @@ def show_result_list(result_files):
         result_frame.destroy()
     result_frame = tk.Frame(root)
     result_frame.pack(fill=tk.BOTH, expand=True, pady=0)
-    tip_label = tk.Label(result_frame, text="Double click to open the file", fg="blue")
+    tip_label = tk.Label(result_frame, text="Double click to open the file", font=("Arial", 9), fg="blue")
     tip_label.pack(padx=5, pady=0, anchor="w")
 
     # 添加 Treeview 控件显示结果
@@ -795,6 +796,13 @@ def show_about():
 '''
 
 def show_about():
+    global about_window_open
+
+    if about_window_open:
+        return  # 如果窗口已经打开，则直接返回
+
+    about_window_open = True  # 设置标志位，表示窗口已经打开
+
     # 创建自定义关于窗口
     about_win = tk.Toplevel(root)
     about_win.withdraw()  # 先隐藏窗口
@@ -802,6 +810,14 @@ def show_about():
     about_win.title("About")
     about_win.geometry("380x280")
     about_win.resizable(False, False)
+
+    # 窗口关闭时重置标志位
+    def on_close():
+        global about_window_open
+        about_window_open = False
+        about_win.destroy()
+
+    about_win.protocol("WM_DELETE_WINDOW", on_close)
 
     # 窗口居中
     about_win.update_idletasks()
@@ -821,7 +837,7 @@ def show_about():
 
     # 左侧图标区域
     icon_frame = tk.Frame(main_frame, width=100)
-    icon_frame.pack(side=tk.LEFT, fill=tk.Y)
+    icon_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10)
     
     try:
         # 解码Base64图标并调整大小
@@ -854,20 +870,20 @@ def show_about():
         if i == 0:
             label = tk.Label(text_frame, text=text, font=("Arial", 10, "bold"), anchor="w")
         else:
-            label = tk.Label(text_frame, text=text, anchor="w")
+            label = tk.Label(text_frame, text=text, font=("Arial", 9), anchor="w")
         label.pack(anchor="w", fill=tk.X)
 
     # 邮箱按钮和地址
     email_frame = tk.Frame(text_frame)
     email_frame.pack(anchor="w")
 
-    email_btn = tk.Button(email_frame, text="Email me", bg="#4CAF50", command=lambda: send_email())
+    email_btn = tk.Button(email_frame, text="Email me", font=("Arial", 9), bg="#4CAF50", command=lambda: send_email())
     email_btn.pack(side=tk.LEFT, padx=0)
 
-    email_label = tk.Label(email_frame, text=": wtweitang@hotmail.com")
+    email_label = tk.Label(email_frame, text=": wtweitang@hotmail.com", font=("Arial", 9))
     email_label.pack(side=tk.LEFT)
 
-    ok_button = tk.Button(about_win, text="OK", width=12, height=1, command=about_win.destroy)
+    ok_button = tk.Button(about_win, text="OK", font=("Arial", 9), width=12, height=1, command=on_close)
     ok_button.pack(padx=20, pady=15, side=tk.RIGHT)
 
 def send_email():
@@ -969,7 +985,8 @@ def toggle_window_size():
         for i, shortcut in enumerate(shortcut_paths):
             btn = tk.Button(
                 shortcut_frame, 
-                text=shortcut["label"], 
+                text=shortcut["label"],
+                font=("Arial", 9),
                 width=100, 
                 command=lambda i=i: open_shortcut(i)
             )
@@ -1046,7 +1063,7 @@ try:
     label_frame.pack(pady=10, anchor="w", fill="x")
 
     # 标签放在第一行
-    prompt_label = tk.Label(label_frame, text="Input Part / Assembly / Project Number :", anchor="w")
+    prompt_label = tk.Label(label_frame, text="Input Part / Assembly / Project Number :", font=("Arial", 9), anchor="w")
     prompt_label.pack(side=tk.LEFT, padx=(20, 0))
 
     # 添加置顶选项
@@ -1069,7 +1086,7 @@ try:
     entry.bind("<Button-1>", show_search_history)  # 点击输入框时显示历史记录
     entry.bind("<KeyRelease>", show_search_history)  # 输入时实时更新匹配历史
     # 用于显示警告信息的标签
-    warning_label = tk.Label(entry_frame, text="", fg="red", anchor="w")
+    warning_label = tk.Label(entry_frame, text="", font=("Arial", 9), fg="red", anchor="w")
     warning_label.pack(fill="x", padx=20)
 
     # 用户点击非 Listbox 或 Entry 区域时销毁 Listbox
@@ -1080,32 +1097,32 @@ try:
     button_frame.pack(pady=5, padx=5, anchor="w")
 
     # Search PDF 按钮
-    search_btn = tk.Button(button_frame, text="Search PDF Drawing", width=18, command=search_pdf_files)
+    search_btn = tk.Button(button_frame, text="Search PDF Drawing", font=("Arial", 9), width=18, command=search_pdf_files)
     search_btn.grid(row=0, column=0, padx=15, pady=10)
     Tooltip(search_btn, lambda: "Search for PDF files matching the entered keywords", delay=500)
 
     # I'm Feeling Lucky 按钮
-    lucky_btn = tk.Button(button_frame, text="I'm Feeling Lucky!", width=18, command=feeling_lucky)
+    lucky_btn = tk.Button(button_frame, text="I'm Feeling Lucky!", font=("Arial", 9), width=18, command=feeling_lucky)
     lucky_btn.grid(row=0, column=1, padx=15, pady=10)
     Tooltip(lucky_btn, lambda: "Open the latest revision of the PDF drawing", delay=500)
 
     # Search 3D drawing 按钮
-    search_3d_btn = tk.Button(button_frame, text="Search 3D Drawing", width=18, command=search_3d_files)
+    search_3d_btn = tk.Button(button_frame, text="Search 3D Drawing", font=("Arial", 9), width=18, command=search_3d_files)
     search_3d_btn.grid(row=1, column=0, padx=15, pady=10)
     Tooltip(search_3d_btn, lambda: "Search for 3D files (.iam/.ipt) matching the entered keywords", delay=500)
 
     # Search vault cache 按钮
-    search_cache_btn = tk.Button(button_frame, text="Search in Vault Cache", width=18, command=search_vault_cache)
+    search_cache_btn = tk.Button(button_frame, text="Search in Vault Cache", font=("Arial", 9), width=18, command=search_vault_cache)
     search_cache_btn.grid(row=1, column=1, padx=15, pady=10)
     Tooltip(search_cache_btn, lambda: "Search 3D drawings (.iam/.ipt) from local Vault cache\rSupport searching by project name", delay=500)
 
     # Reset 按钮
-    reset_btn = tk.Button(button_frame, text="Reset", width=18, command=reset_window)
+    reset_btn = tk.Button(button_frame, text="Reset", font=("Arial", 9), width=18, command=reset_window)
     reset_btn.grid(row=2, column=0, padx=15, pady=8)
     Tooltip(reset_btn, lambda: "Reset the window to default and stop the current search", delay=500)
 
     # 扩展按钮
-    expand_btn = tk.Button(button_frame, text="Quick Access   >>", width=18, command=toggle_window_size)
+    expand_btn = tk.Button(button_frame, text="Quick Access   >>", font=("Arial", 9), width=18, command=toggle_window_size)
     expand_btn.grid(row=2, column=1, padx=15, pady=8)
     Tooltip(expand_btn, lambda: "Shortcuts to frequently used folders and files", delay=500)
 
@@ -1131,7 +1148,7 @@ try:
     # About 按钮
     about_frame = tk.Frame(root)
     about_frame.pack(anchor="e", padx=0, pady=5, fill="x")
-    about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Fixedsys", 12, "bold"))
+    about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Fixedsys", 13, "bold"))
     about_label.pack(anchor="e", padx=5, pady=5)
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
