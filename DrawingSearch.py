@@ -19,7 +19,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.6"  # 版本号
+ver = "1.1.7"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -418,7 +418,7 @@ def search_3d_files_thread(query, search_directory):
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
 
         if not result_files:
-            root.after(0, lambda: show_warning_message("No matching 3D drawing found!"))
+            root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache."))
 
         # 排序结果（按文件名排序）
         result_files.sort(key=lambda x: x[0])
@@ -480,10 +480,10 @@ def search_vault_cache():
             return
     else:
         # 任何其他字符串，都当作是project name去匹配，去PARTS/S路径下查找匹配的目录
-        for root_dir, dirs, _ in os.walk(os.path.join(vault_cache, "S")):
-            for dir_name in dirs:
-                if query.lower() in dir_name.lower():
-                    matching_directories.append(os.path.join(root_dir, dir_name))
+        for dir_name in os.listdir(os.path.join(vault_cache, "S")):
+            dir_path= os.path.join(vault_cache, "S", dir_name)
+            if os.path.isdir(dir_path) and query.lower() in dir_name.lower():
+                matching_directories.append(dir_path)
         # 根据匹配到的目录数量进行处理
         if len(matching_directories) == 1:
             search_directory = matching_directories[0]
@@ -679,12 +679,12 @@ def ask_user_to_select_directory(directories):
     choice_win.geometry("280x200")
     choice_win.resizable(False, False)
 
-    # 窗口居中
+    # 窗口位置，跟随主窗口初始大小居中，方便鼠标选取
     choice_win.update_idletasks()
-    window_width = choice_win.winfo_width()
-    window_height = choice_win.winfo_height()
-    position_right = int(choice_win.winfo_screenwidth()/2 - window_width/2)
-    position_down = int(choice_win.winfo_screenheight()/3 - window_height/2)
+    choice_win_width = choice_win.winfo_width()
+    choice_win_height = choice_win.winfo_height()
+    position_right = int(root.winfo_x() + window_width/2 - choice_win_width/2)
+    position_down = int(root.winfo_y() + window_height/2 - choice_win_height/2)
     choice_win.geometry(f"+{position_right}+{position_down}")
     choice_win.deiconify() # 显示窗口
 
@@ -819,12 +819,12 @@ def show_about():
 
     about_win.protocol("WM_DELETE_WINDOW", on_close)
 
-    # 窗口居中
+    # 窗口位置，跟随主窗口居中显示，不考虑Treeview高度
     about_win.update_idletasks()
-    window_width = about_win.winfo_width()
-    window_height = about_win.winfo_height()
-    position_right = int(about_win.winfo_screenwidth()/2 - window_width/2)
-    position_down = int(about_win.winfo_screenheight()/3 - window_height/2)
+    about_win_width = about_win.winfo_width()
+    about_win_height = about_win.winfo_height()
+    position_right = int(root.winfo_x() + root.winfo_width()/2 - about_win_width/2)
+    position_down = int(root.winfo_y() + window_height - about_win_height)
     about_win.geometry(f"+{position_right}+{position_down}")
     about_win.deiconify() # 显示窗口
     
@@ -1148,7 +1148,7 @@ try:
     # About 按钮
     about_frame = tk.Frame(root)
     about_frame.pack(anchor="e", padx=0, pady=5, fill="x")
-    about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Fixedsys", 13, "bold"))
+    about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Arial Unicode MS", 13, "bold"))
     about_label.pack(anchor="e", padx=5, pady=5)
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
