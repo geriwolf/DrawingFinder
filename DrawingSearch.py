@@ -19,7 +19,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.7"  # 版本号
+ver = "1.1.8"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -36,7 +36,7 @@ active_threads = set()
 shortcut_frame = None  # 用于快捷访问按钮的框架
 default_parts_path = os.path.normpath("K:\\PARTS")
 vault_cache = os.path.normpath("C:\\_Vault Working Folder\\Designs\\PARTS")  # Vault 缓存目录
-# 快捷访问路径列表，存储显示文字和对应路径
+# 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "Parts Folder", "path": "K:\\PARTS"},
     {"label": "Latest Missing List", "path": "V:\\Missing Lists\\Missing_Parts_List"},
@@ -49,11 +49,11 @@ shortcut_paths = [
 class Tooltip:
     def __init__(self, widget, get_text_callback, delay=500):
         self.widget = widget
-        self.get_text_callback = get_text_callback  # 动态获取文字的回调
+        self.get_text_callback = get_text_callback  # 动态获取文字
         self.delay = delay  # 延迟时间（毫秒）
         self.tooltip_window = None
         self.after_id = None
-        # self.last_motion_time = 0
+        # self.last_motion_time = 0  # 用于防抖处理的变量，避免实时更新影响性能
 
         self.widget.bind("<Enter>", self.schedule_show)
         self.widget.bind("<Leave>", self.hide_tooltip)
@@ -147,11 +147,11 @@ def open_shortcut(index):
                 return
         
         try:
-            # 如果是目录，根据操作系统选择不同的打开方式
             if os.path.isdir(path):
-                os.startfile(path)  # 打开目录
+                # 如果是目录，打开目录
+                os.startfile(path)
             else:
-                # 如果是文件，直接通过 open_file 打开
+                # 如果是文件，通过 open_file 打开
                 open_file(file_path=path)
         except Exception as e:
             messagebox.showerror("Error", f"Cannot open shortcut: {e}")
@@ -225,7 +225,7 @@ def show_search_history(event):
     # 创建列表框
     history_listbox = tk.Listbox(root, height=min(len(matching_history), 5))
     for item in matching_history:
-        history_listbox.insert(tk.END, item)
+        history_listbox.insert(0, item) # 最新的搜索记录显示在列表最上面
 
     # 获取输入框的绝对位置
     # 因为entry放置在entry_frame中，所以需要计算相对位置，用entry获取x坐标，用entry_frame获取y坐标
@@ -281,7 +281,7 @@ def search_pdf_files():
     query = entry.get().strip() # 去除首尾空格
     if not query:
         show_warning_message("Please enter any number or project name!")
-        enable_search_button() #启用搜索按钮
+        enable_search_button() # 启用搜索按钮
         return
 
     save_search_history(query)  # 保存搜索记录
@@ -296,11 +296,11 @@ def search_pdf_files():
     if not os.path.exists(search_directory):
         show_warning_message(f"Path does not exist! {search_directory}")
         show_result_list(None) # 目录不存在就清空已有搜索结果
-        enable_search_button() #启用搜索按钮
+        enable_search_button() # 启用搜索按钮
         return
 
     # 执行搜索
-    show_warning_message(f"Searching for \"{query}\", please wait...")
+    show_warning_message(f"Searching... Please wait.")
     query = query.lower()
     # 对STK的project number进行特殊处理
     if query.startswith("stk") and len(query) > 3:
@@ -328,6 +328,7 @@ def search_pdf_files_thread(query, search_directory):
             for file in files:
                 if stop_event.is_set():  # 检查是否需要终止
                     break
+                show_warning_message(f"Searching... Please wait.  {file}")
                 if file.endswith(".pdf") and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -349,7 +350,7 @@ def search_pdf_files_thread(query, search_directory):
                 root.after(0, lambda: show_result_list(result_files))
             else:
                 root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
-            root.after(0, lambda: enable_search_button()) #启用搜索按钮
+            root.after(0, lambda: enable_search_button()) # 启用搜索按钮
             return
 
         if not result_files:
@@ -370,7 +371,7 @@ def search_3d_files():
     query = entry.get().strip() # 去除首尾空格
     if not query:
         show_warning_message("Please enter any number or project name!")
-        enable_search_button() #启用搜索按钮
+        enable_search_button() # 启用搜索按钮
         return
 
     save_search_history(query)  # 保存搜索记录
@@ -385,11 +386,11 @@ def search_3d_files():
     if not os.path.exists(search_directory):
         show_warning_message(f"Path does not exist! {search_directory}")
         show_result_list(None) # 目录不存在就清空已有搜索结果
-        enable_search_button() #启用搜索按钮
+        enable_search_button() # 启用搜索按钮
         return
 
     # 执行搜索
-    show_warning_message(f"Searching for \"{query}\", please wait...")
+    show_warning_message(f"Searching... Please wait.")
 
     stop_event.clear()  # 确保上一次的停止信号被清除
     search_thread = threading.Thread(target=search_3d_files_thread, args=(query, search_directory,))
@@ -408,6 +409,7 @@ def search_3d_files_thread(query, search_directory):
             for file in files:
                 if stop_event.is_set():  # 检查是否需要终止
                     break
+                show_warning_message(f"Searching... Please wait.  {file}")
                 if (file.endswith(".iam") or file.endswith(".ipt")) and query.lower() in file.lower():
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -437,7 +439,7 @@ def search_vault_cache():
     query = entry.get().strip() # 去除首尾空格
     if not query:
         show_warning_message("Please enter any number or project name!")
-        enable_search_button() #启用搜索按钮
+        enable_search_button() # 启用搜索按钮
         return
 
     save_search_history(query)  # 保存搜索记录
@@ -476,7 +478,7 @@ def search_vault_cache():
         if not os.path.exists(search_directory):
             show_warning_message("No matching 3D drawings are cached. Check in Vault!")
             show_result_list(None) # 目录不存在就清空已有搜索结果
-            enable_search_button() #启用搜索按钮
+            enable_search_button() # 启用搜索按钮
             return
     else:
         # 任何其他字符串，都当作是project name去匹配，去PARTS/S路径下查找匹配的目录
@@ -530,7 +532,7 @@ def search_vault_cache():
                             query = sub_dir
             else:
                 show_warning_message("Cancelled!")
-                enable_search_button() #启用搜索按钮
+                enable_search_button() # 启用搜索按钮
                 return
         else:
             # 如果用户输入的关键字匹配不到任何project，直接当作子目录去PARTS下搜索，如PARTS/XX
@@ -539,7 +541,7 @@ def search_vault_cache():
             if not os.path.exists(search_directory):
                 show_warning_message("No matching 3D drawings are cached. Check in Vault!")
                 show_result_list(None) # 目录不存在就清空已有搜索结果
-                enable_search_button() #启用搜索按钮
+                enable_search_button() # 启用搜索按钮
                 return
 
     if not search_directory:
@@ -584,16 +586,16 @@ def search_vault_cache():
                             query = sub_dir
             else:
                 show_warning_message("Cancelled!")
-                enable_search_button() #启用搜索按钮
+                enable_search_button() # 启用搜索按钮
                 return
         else:
             show_warning_message("No matching 3D drawings are cached. Check in Vault!")
             show_result_list(None) # 目录不存在就清空已有搜索结果
-            enable_search_button() #启用搜索按钮
+            enable_search_button() # 启用搜索按钮
             return
 
     # 执行搜索
-    show_warning_message(f"Searching for \"{query}\", please wait...")
+    show_warning_message(f"Searching... Please wait.")
     if query.lower().startswith("stk"):
         if len(query) > 3:
             if query[3] == '-' or query[3] == ' ':
@@ -626,6 +628,7 @@ def search_vault_cache_thread(query, search_directory):
             for file in files:
                 if stop_event.is_set():  # 检查是否需要终止
                     break
+                show_warning_message(f"Searching... Please wait.  {file}")
                 if (file.endswith(".iam") or file.endswith(".ipt")) and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -679,7 +682,7 @@ def ask_user_to_select_directory(directories):
     choice_win.geometry("280x200")
     choice_win.resizable(False, False)
 
-    # 窗口位置，跟随主窗口初始大小居中，方便鼠标选取
+    # 窗口位置，跟随主窗口初始大小居中显示，方便鼠标选取
     choice_win.update_idletasks()
     choice_win_width = choice_win.winfo_width()
     choice_win_height = choice_win.winfo_height()
@@ -790,12 +793,14 @@ def show_result_list(result_files):
 
 '''
 def show_about():
+    """显示关于信息的对话框"""
     messagebox.showinfo("About", f"This is a mini-app for quickly accessing\rdrawings on BellatRx computers.\
                         \r\rIf you have any questions or suggestions,\rplease feel free to contact me.\
                         \r\rVersion: {ver}\rDeveloped by: Wei Tang\rContact: wtweitang@hotmail.com")
 '''
 
 def show_about():
+    """自定义关于信息的窗口"""
     global about_window_open
 
     if about_window_open:
