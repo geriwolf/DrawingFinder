@@ -300,7 +300,7 @@ def search_pdf_files():
         return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.")
+    show_warning_message(f"Searching for \"{query}\"... Please wait.")
     query = query.lower()
     # 对STK的project number进行特殊处理
     if query.startswith("stk") and len(query) > 3:
@@ -328,7 +328,6 @@ def search_pdf_files_thread(query, search_directory):
             for file in files:
                 if stop_event.is_set():  # 检查是否需要终止
                     break
-                show_warning_message(f"Searching... Please wait.  {file}")
                 if file.endswith(".pdf") and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -390,7 +389,7 @@ def search_3d_files():
         return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.")
+    show_warning_message(f"Searching for \"{query}\"... Please wait.")
 
     stop_event.clear()  # 确保上一次的停止信号被清除
     search_thread = threading.Thread(target=search_3d_files_thread, args=(query, search_directory,))
@@ -409,7 +408,6 @@ def search_3d_files_thread(query, search_directory):
             for file in files:
                 if stop_event.is_set():  # 检查是否需要终止
                     break
-                show_warning_message(f"Searching... Please wait.  {file}")
                 if (file.endswith(".iam") or file.endswith(".ipt")) and query.lower() in file.lower():
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -595,7 +593,7 @@ def search_vault_cache():
             return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.")
+    show_warning_message(f"Searching for \"{query}\"... Please wait.")
     if query.lower().startswith("stk"):
         if len(query) > 3:
             if query[3] == '-' or query[3] == ' ':
@@ -628,7 +626,6 @@ def search_vault_cache_thread(query, search_directory):
             for file in files:
                 if stop_event.is_set():  # 检查是否需要终止
                     break
-                show_warning_message(f"Searching... Please wait.  {file}")
                 if (file.endswith(".iam") or file.endswith(".ipt")) and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
