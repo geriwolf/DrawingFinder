@@ -19,7 +19,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.8"  # 版本号
+ver = "1.1.9"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -322,7 +322,7 @@ def search_pdf_files_thread(query, search_directory):
         is_feeling_lucky = feeling_lucky_pressed
         regex_pattern = re.compile(query, re.IGNORECASE)
         result_files = []
-        i = 0
+        i = 50
         for root_dir, _, files in os.walk(search_directory):
             if stop_event.is_set():  # 检查是否需要终止
                 break
@@ -330,10 +330,10 @@ def search_pdf_files_thread(query, search_directory):
                 if stop_event.is_set():  # 检查是否需要终止
                     break
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
-                i += 1
                 if i == 50:
                     root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}"))
                     i = 0
+                i += 1
                 if file.endswith(".pdf") and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -408,7 +408,7 @@ def search_3d_files_thread(query, search_directory):
     try:
         """使用多线程搜索目录下的 3D 文件"""
         result_files = []
-        i = 0
+        i = 50
         for root_dir, _, files in os.walk(search_directory):
             if stop_event.is_set():  # 检查是否需要终止
                 break
@@ -416,10 +416,10 @@ def search_3d_files_thread(query, search_directory):
                 if stop_event.is_set():  # 检查是否需要终止
                     break
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
-                i += 1
                 if i == 50:
                     root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}"))
                     i = 0
+                i += 1
                 if (file.endswith(".iam") or file.endswith(".ipt")) and query.lower() in file.lower():
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -630,9 +630,9 @@ def search_vault_cache_thread(query, search_directory):
     try:
         """使用多线程搜索Vault缓存目录下的 3D 文件"""
         result_files = []
-        i = 0
         # 替换通配符为正则表达式
         regex_pattern = re.compile(query.replace("*", ".*"), re.IGNORECASE)
+        i = 50
         for root_dir, _, files in os.walk(search_directory):
             if stop_event.is_set():  # 检查是否需要终止
                 break
@@ -640,10 +640,10 @@ def search_vault_cache_thread(query, search_directory):
                 if stop_event.is_set():  # 检查是否需要终止
                     break
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
-                i += 1
                 if i == 50:
                     root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}"))
                     i = 0
+                i += 1
                 if (file.endswith(".iam") or file.endswith(".ipt")) and regex_pattern.search(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1060,6 +1060,64 @@ def create_entry_context_menu(entry_widget):
     # 将右键单击事件绑定到 Entry 小部件
     entry_widget.bind("<Button-3>", show_context_menu)
 
+# 打开 mini 窗口
+def open_mini_window():
+    # 隐藏主窗口
+    root.withdraw()
+    
+    # 创建 mini 窗口
+    mini_win = tk.Toplevel(root)
+    mini_win.withdraw()  # 先隐藏窗口
+    mini_win.title("Drawing Search")
+    mini_win.geometry("260x50")
+    mini_win.attributes("-topmost", True) # 窗口置顶
+    mini_win.attributes('-alpha', 0.6)  # 设置窗口透明度
+    mini_win.resizable(False, False)
+
+    # 设置窗口图标（复用主窗口图标）
+    mini_win.tk.call("wm", "iconphoto", mini_win._w, icon)
+
+    # 窗口位置，跟随主窗口居中显示
+    mini_win.update_idletasks()
+    mini_win_width = mini_win.winfo_width()
+    mini_win_height = mini_win.winfo_height()
+    position_right = int(root.winfo_x() + root.winfo_width()/2 - mini_win_width/2)
+    position_down = int(root.winfo_y() + mini_win_height)
+    mini_win.geometry(f"+{position_right}+{position_down}")
+    mini_win.deiconify() # 显示mini窗口
+    
+    # 创建 mini 窗口的框架
+    mini_frame = tk.Frame(mini_win)
+    mini_frame.pack(pady=10)
+
+    # 在框架中添加一个输入框
+    mini_entry = tk.Entry(mini_frame, font=("Arial", 14), width=12)
+    mini_entry.pack(side="left", pady=0, padx=5)
+    mini_entry.focus()
+    
+    # 定义 mini 窗口的搜索操作
+    def on_search_mini(event=None):
+        query = mini_entry.get().strip()
+        if query:
+            # 将 mini 窗口输入内容传递到主窗口的输入框
+            entry.delete(0, tk.END)
+            entry.insert(0, query)
+            # 销毁 mini 窗口，并显示主窗口
+            mini_win.destroy()
+            root.deiconify()
+            # 调用搜索pdf函数
+            search_pdf_files()
+    
+    # 绑定回车键
+    mini_entry.bind("<Return>", on_search_mini)
+    
+    # 添加搜索按钮
+    search_btn_mini = tk.Button(mini_frame, text="Search", font=("Arial", 9), width=8, command=on_search_mini)
+    search_btn_mini.pack(side="right", padx=5)
+
+    # 如果用户直接关闭 mini 窗口，则重新显示主窗口
+    mini_win.protocol("WM_DELETE_WINDOW", lambda: (mini_win.destroy(), root.deiconify()))
+
 # 创建主窗口
 try:
     root = tk.Tk()
@@ -1092,8 +1150,14 @@ try:
 
     # 创建复选框，用于控制窗口置顶
     checkbox = tk.Checkbutton(label_frame, text="📌", font=("Arial", 12), variable=topmost_var, command=toggle_topmost)
-    checkbox.pack(anchor="e", padx=5)
+    checkbox.pack(side=tk.RIGHT, padx=5)
     Tooltip(checkbox, lambda: "Pin to top", delay=500)
+
+    # 添加切换mini窗口的按钮
+    mini_search_label = tk.Label(label_frame, text="🍀", font=("Arial", 12), cursor="hand2")
+    mini_search_label.pack(side=tk.RIGHT, padx=10)
+    mini_search_label.bind("<Button-1>", lambda event: open_mini_window())
+    Tooltip(mini_search_label, lambda: "Switch to mini window", delay=500)
 
     # 创建输入框框架
     entry_frame = tk.Frame(root)
