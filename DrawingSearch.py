@@ -3,6 +3,7 @@ import os
 import io
 import re
 import datetime
+import collections
 import base64
 import glob
 import threading
@@ -19,7 +20,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.9"  # 版本号
+ver = "1.1.10"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -36,6 +37,9 @@ active_threads = set()
 shortcut_frame = None  # 用于快捷访问按钮的框架
 default_parts_path = os.path.normpath("K:\\PARTS")
 vault_cache = os.path.normpath("C:\\_Vault Working Folder\\Designs\\PARTS")  # Vault 缓存目录
+# 全局缓存字典，键为目录路径，值为该目录下的所有文件信息列表
+directory_cache = collections.OrderedDict()  # 使用 OrderedDict 维护缓存顺序
+cache_max_size = 10  # 设置缓存最大条目数，防止缓存过大
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "Parts Folder", "path": "K:\\PARTS"},
@@ -109,6 +113,8 @@ class Tooltip:
 def show_warning_message(message):
     """在输入框下方显示警告信息"""
     global warning_label
+    if warning_label is None:
+        return
     if "Tip" in message:
         warning_label.config(fg="blue")  # 提示类的信息用蓝色显示
     else:
@@ -274,7 +280,42 @@ def enable_search_button():
     search_3d_btn.config(state=tk.NORMAL)
     search_cache_btn.config(state=tk.NORMAL)
 
-def search_pdf_files():
+def build_directory_cache(search_directory):
+    """
+    遍历指定目录，构建并返回一个文件信息列表。
+    每个文件信息可以是一个元组：(文件名, 文件路径, 创建时间)
+    """
+    files_info = []
+    for root_dir, _, files in os.walk(search_directory):
+        for file in files:
+            file_path = os.path.join(root_dir, file)
+            try:
+                create_time = os.path.getctime(file_path)
+            except Exception as e:
+                create_time = 0
+            files_info.append((file, file_path, create_time))
+
+    # 如果缓存数量超过 cache_max_size 限制，则删除最老的未使用项（LRU）
+    if len(directory_cache) >= cache_max_size:
+        directory_cache.popitem(last=False)  # 移除最老的未使用项
+
+    # 添加新缓存数据，并将其移动到末尾（表示最近使用）
+    directory_cache[search_directory] = files_info
+    directory_cache.move_to_end(search_directory)
+
+    return files_info
+
+def get_cached_directory(search_directory):
+    """
+    获取缓存的目录信息，如果存在则返回，否则返回 None。
+    并将访问的缓存项移动到末尾（表示最近使用）
+    """
+    if search_directory in directory_cache:
+        directory_cache.move_to_end(search_directory)
+        return directory_cache[search_directory]
+    return None
+
+def search_pdf_files(is_feeling_lucky=False):
     """搜索目录下的 PDF 文件"""
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
@@ -310,19 +351,42 @@ def search_pdf_files():
             query = query[:3] + '.*' + query[3:]
 
     stop_event.clear()  # 确保上一次的停止信号被清除
-    search_thread = threading.Thread(target=search_pdf_files_thread, args=(query, search_directory,))
+    search_thread = threading.Thread(target=search_pdf_files_thread, args=(query, search_directory, is_feeling_lucky))
     search_thread.start()
 
-def search_pdf_files_thread(query, search_directory):
+def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
     """使用多线程搜索目录下的 PDF 文件"""
-    global active_threads
+    global active_threads, directory_cache
+
+    # 从缓存中取出所有文件信息
+    all_files = get_cached_directory(search_directory)
+    if all_files is None:
+        # 如果缓存中没有该目录的记录，则建立缓存
+        root.after(0, lambda: show_warning_message(f"Building search cache... Please wait."))
+        all_files = build_directory_cache(search_directory)
+
     thread = threading.current_thread()
     active_threads.add(thread)
     try:
-        is_feeling_lucky = feeling_lucky_pressed
         regex_pattern = re.compile(query, re.IGNORECASE)
         result_files = []
         i = 50
+        for file_info in all_files:
+            if stop_event.is_set():  # 检查是否需要终止
+                break
+            file_name = file_info[0]
+            # 每遍历50个文件，显示一次文件名，体现搜索过程
+            if i == 50:
+                root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}"))
+                i = 0
+            i += 1
+            if file_name.endswith(".pdf") and regex_pattern.search(file_name):
+                # 格式化创建时间
+                create_time = datetime.datetime.fromtimestamp(file_info[2]).strftime("%Y-%m-%d %H:%M:%S")
+                result_files.append((file_name, create_time, file_info[1]))
+
+        '''
+        # 以下代码是直接遍历目录下的文件，不使用缓存
         for root_dir, _, files in os.walk(search_directory):
             if stop_event.is_set():  # 检查是否需要终止
                 break
@@ -338,6 +402,7 @@ def search_pdf_files_thread(query, search_directory):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
                     result_files.append((file, create_time, file_path))
+        '''
 
         if stop_event.is_set():  # 检查停止标志并返回
             return
@@ -346,23 +411,23 @@ def search_pdf_files_thread(query, search_directory):
 
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
 
-        # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
-        if is_feeling_lucky:
-            if result_files:
+        # 提示用户搜索结果来自于搜索缓存，可能不是最新的，暂时注释掉不使用
+        # root.after(0, lambda: show_warning_message("Tip: Searched from cache. Use Reset to clear to update."))
+
+        # 如果没有搜索到匹配的文件，显示警告信息
+        if not result_files:
+            root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
+        else:
+            if is_feeling_lucky:
+                # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
                 file_path = result_files[0][2]  # 复制file_path的值传给open_file，避免result_files被修改后值为空
                 root.after(0, lambda: open_file(file_path=file_path))
                 result_files = []
-                root.after(0, lambda: show_result_list(result_files))
-            else:
-                root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
-            root.after(0, lambda: enable_search_button()) # 启用搜索按钮
-            return
 
-        if not result_files:
-            root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
-
+        # 显示搜索结果
         root.after(0, lambda: show_result_list(result_files))
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
+
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
 
@@ -402,13 +467,37 @@ def search_3d_files():
     search_thread.start()
 
 def search_3d_files_thread(query, search_directory):
-    global active_threads
+    global active_threads, directory_cache
+
+    # 从缓存中取出所有文件信息
+    all_files = get_cached_directory(search_directory)
+    if all_files is None:
+        # 如果缓存中没有该目录的记录，则建立缓存
+        root.after(0, lambda: show_warning_message(f"Building search cache... Please wait."))
+        all_files = build_directory_cache(search_directory)
+
     thread = threading.current_thread()
     active_threads.add(thread)
     try:
         """使用多线程搜索目录下的 3D 文件"""
         result_files = []
         i = 50
+        for file_info in all_files:
+            if stop_event.is_set():  # 检查是否需要终止
+                break
+            file_name = file_info[0]
+            # 每遍历50个文件，显示一次文件名，体现搜索过程
+            if i == 50:
+                root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}"))
+                i = 0
+            i += 1
+            if (file_name.endswith(".iam") or file_name.endswith(".ipt")) and query.lower() in file_name.lower():
+                # 格式化创建时间
+                create_time = datetime.datetime.fromtimestamp(file_info[2]).strftime("%Y-%m-%d %H:%M:%S")
+                result_files.append((file_name, create_time, file_info[1]))
+
+        '''
+        # 以下代码是直接遍历目录下的文件，不使用缓存
         for root_dir, _, files in os.walk(search_directory):
             if stop_event.is_set():  # 检查是否需要终止
                 break
@@ -424,10 +513,14 @@ def search_3d_files_thread(query, search_directory):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
                     result_files.append((file, create_time, file_path))
+        '''
 
         if stop_event.is_set():  # 检查停止标志并返回
             return
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
+
+        # 提示用户搜索结果来自于搜索缓存，可能不是最新的，暂时注释掉不使用
+        # root.after(0, lambda: show_warning_message("Tip: Searched from cache. Use Reset to clear to update."))
 
         if not result_files:
             root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache."))
@@ -766,12 +859,16 @@ def show_result_list(result_files):
                 root.geometry(f"{window_width}x{window_height}")
         return
 
+    # 显示搜索结果数量
+    count = len(result_files)
+    msg = f"{count} file{'s' if count!=1 else ''} found. Double-click to open."
+
     # 创建结果显示区域
     if result_frame:
         result_frame.destroy()
     result_frame = tk.Frame(root)
     result_frame.pack(fill=tk.BOTH, expand=True, pady=0)
-    tip_label = tk.Label(result_frame, text="Double click to open the file", font=("Arial", 9), fg="blue")
+    tip_label = tk.Label(result_frame, text=msg, font=("Arial", 9), fg="blue")
     tip_label.pack(padx=5, pady=0, anchor="w")
 
     # 添加 Treeview 控件显示结果
@@ -922,8 +1019,8 @@ def send_email():
         messagebox.showerror("Error", f"Cannot open email client: {e}")
 
 def reset_window():
-    """恢复主窗口到初始状态"""
-    global result_frame, results_tree, history_listbox, window_expanded, shortcut_frame
+    """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
+    global result_frame, results_tree, history_listbox, window_expanded, shortcut_frame, directory_cache
 
     # 触发停止事件
     stop_event.set()
@@ -938,6 +1035,9 @@ def reset_window():
     # 重置停止事件，以便下一次搜索可以正常启动
     stop_event.clear()
 
+    # 清空目录缓存
+    directory_cache.clear()
+    
     entry.delete(0, tk.END)  # 清空输入框
     hide_warning_message()  # 清除警告信息
     enable_search_button() # 启用搜索按钮
@@ -957,7 +1057,7 @@ def feeling_lucky():
     """设置标志位并执行搜索"""
     global feeling_lucky_pressed
     feeling_lucky_pressed = True
-    search_pdf_files()
+    search_pdf_files(feeling_lucky_pressed)
     feeling_lucky_pressed = False
 
 def get_latest_file(prefix_name, directory):
@@ -1210,7 +1310,7 @@ try:
     # Reset 按钮
     reset_btn = tk.Button(button_frame, text="Reset", font=("Arial", 9), width=18, command=reset_window)
     reset_btn.grid(row=2, column=0, padx=15, pady=8)
-    Tooltip(reset_btn, lambda: "Reset the window to default and stop the current search", delay=500)
+    Tooltip(reset_btn, lambda: "Reset the window to default, stop the current search\rand clear search cache", delay=500)
 
     # 扩展按钮
     expand_btn = tk.Button(button_frame, text="Quick Access   >>", font=("Arial", 9), width=18, command=toggle_window_size)
