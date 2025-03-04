@@ -458,6 +458,13 @@ def search_vault_cache():
     search_directory = None
     real_query = None
 
+    if not os.path.exists(vault_cache):
+        # 如果Vault缓存目录不存在，提示用户使用Vault
+        show_warning_message(f"Vault cache not found! Please use Vault instead.")
+        show_result_list(None) # 目录不存在就清空已有搜索结果
+        enable_search_button() # 启用搜索按钮
+        return
+
     if len(query) > 2 and query[2].isdigit():
         # 用户输入的是project number，可能包括2012789，2012789-100，2012789 100等格式
         # 也可能输入不完整的数字，在后面匹配目录时，用通配符*去匹配
