@@ -288,7 +288,13 @@ def build_directory_cache_thread(search_directory):
     """
     global directory_cache, active_threads
     thread = threading.current_thread()
+
+    # 检查线程是否已经在运行
+    if any(t.name == f"cache_thread_{search_directory}" for t in active_threads):
+        return
+    
     active_threads.add(thread)
+    thread.name = f"cache_thread_{search_directory}"
 
     try:
         files_info = []
@@ -403,8 +409,11 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
         all_files = get_cached_directory(search_directory)
         if all_files is None:
             # 如果缓存中没有该目录的记录，则在后台建立缓存
-            cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
-            cache_thread.start()
+            # 检查是否已经有当前搜索目录的缓存线程在运行
+            if not any(t.name == f"cache_thread_{search_directory}" for t in active_threads):
+                cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
+                cache_thread.name = f"cache_thread_{search_directory}"
+                cache_thread.start()
 
             # 直接遍历目录下的文件，不使用缓存
             i = 50
@@ -535,8 +544,11 @@ def search_3d_files_thread(query, search_directory):
         all_files = get_cached_directory(search_directory)
         if all_files is None:
             # 如果缓存中没有该目录的记录，则在后台建立缓存
-            cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
-            cache_thread.start()
+            # 检查是否已经有当前搜索目录的缓存线程在运行
+            if not any(t.name == f"cache_thread_{search_directory}" for t in active_threads):
+                cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
+                cache_thread.name = f"cache_thread_{search_directory}"
+                cache_thread.start()
 
             # 直接遍历目录下的文件，不使用缓存
             i = 50
