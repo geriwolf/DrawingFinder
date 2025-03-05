@@ -861,7 +861,7 @@ def ask_user_to_select_directory(directories):
     choice_win = tk.Toplevel(root)
     choice_win.withdraw()  # 先隐藏窗口
     choice_win.attributes("-topmost", True)
-    choice_win.tk.call("wm", "iconphoto", choice_win._w, icon) # 设置窗口图标（复用主窗口图标）
+    choice_win.iconphoto(True, icon) # 设置窗口图标
     choice_win.title("Select Project")
     choice_win.geometry("280x200")
     choice_win.resizable(False, False)
@@ -1014,7 +1014,7 @@ def show_about():
     about_win.deiconify() # 显示窗口
     
     # 设置窗口图标（复用主窗口图标）
-    about_win.tk.call("wm", "iconphoto", about_win._w, icon)
+    about_win.iconphoto(True, icon)
     
     # 主容器框架
     main_frame = tk.Frame(about_win)
@@ -1243,7 +1243,7 @@ def open_mini_window():
     mini_win.resizable(False, False)
 
     # 设置窗口图标（复用主窗口图标）
-    mini_win.tk.call("wm", "iconphoto", mini_win._w, icon)
+    mini_win.iconphoto(True, icon)
 
     # 窗口位置，跟随主窗口居中显示
     mini_win.update_idletasks()
@@ -1296,7 +1296,7 @@ try:
     icon_image = Image.open(io.BytesIO(icon_data))
     icon = ImageTk.PhotoImage(icon_image)
     # 设置窗口图标
-    root.tk.call("wm", "iconphoto", root._w, icon)
+    root.iconphoto(True, icon)
     root.title("Drawing Search")
     root.geometry(f"{window_width}x{window_height}")  # 初始窗口大小
     root.resizable(False, False)
