@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.1.12"  # 版本号
+ver = "1.1.13"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -1021,7 +1021,7 @@ def show_about():
     about_win_width = about_win.winfo_width()
     about_win_height = about_win.winfo_height()
     position_right = int(root.winfo_x() + root.winfo_width()/2 - about_win_width/2)
-    position_down = int(root.winfo_y() + window_height - about_win_height)
+    position_down = int(root.winfo_y() + window_height - about_win_height + 6)
     about_win.geometry(f"+{position_right}+{position_down}")
     about_win.deiconify() # 显示窗口
     
@@ -1080,7 +1080,7 @@ def show_about():
     email_label = tk.Label(email_frame, text=": wtweitang@hotmail.com", font=("Arial", 9))
     email_label.pack(side=tk.LEFT)
 
-    ok_button = tk.Button(about_win, text="OK", font=("Arial", 9), width=12, height=1, command=on_close)
+    ok_button = tk.Button(about_win, text="OK", font=("Arial", 9), width=12, height=2, command=on_close)
     ok_button.pack(padx=20, pady=15, side=tk.RIGHT)
 
 def send_email():
@@ -1411,9 +1411,9 @@ try:
 
     # About 按钮
     about_frame = tk.Frame(root)
-    about_frame.pack(anchor="e", padx=0, pady=5, fill="x")
+    about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
     about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Arial Unicode MS", 13, "bold"))
-    about_label.pack(anchor="e", padx=5, pady=5)
+    about_label.pack(anchor="e", padx=10, pady=5)
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
 
