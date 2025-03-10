@@ -296,6 +296,9 @@ def build_directory_cache_thread(search_directory):
     
     active_threads.add(thread)
     thread.name = f"cache_thread_{search_directory}"
+    
+    root.after(0, lambda: cache_label.config(fg="red"))
+    root.after(0, lambda: Tooltip(cache_label,  lambda: "Caching in progress", delay=500))
 
     try:
         files_info = []
@@ -325,6 +328,9 @@ def build_directory_cache_thread(search_directory):
             # 添加新缓存数据，并将其移动到末尾（表示最近使用）
             directory_cache[search_directory] = files_info
             directory_cache.move_to_end(search_directory)
+
+            root.after(0, lambda: cache_label.config(fg="green"))
+            root.after(0, lambda: Tooltip(cache_label,  lambda: "Caching completed", delay=500))
 
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in cache thread: {e}"))
@@ -1119,6 +1125,8 @@ def reset_window():
 
     # 清空目录缓存
     directory_cache.clear()
+    cache_label.config(fg="lightgray")
+    Tooltip(cache_label,  lambda: "Caching status", delay=500)
     
     entry.delete(0, tk.END)  # 清空输入框
     hide_warning_message()  # 清除警告信息
@@ -1218,6 +1226,7 @@ def center_window(root, width, height):
 # 窗口置顶
 def toggle_topmost():
     # 根据复选框的状态设置窗口是否置顶
+    entry.focus()  # 保持焦点在输入框
     is_checked = topmost_var.get()
     root.attributes("-topmost", is_checked)
 
@@ -1447,9 +1456,12 @@ try:
     about_frame = tk.Frame(root)
     about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
     about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Arial Unicode MS", 13, "bold"))
-    about_label.pack(anchor="e", padx=int(10*sf), pady=int(8*sf))
+    about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=int(8*sf))
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
+    cache_label = tk.Label(about_frame, text="●", fg="lightgray")
+    cache_label.pack(side=tk.RIGHT, padx=0, pady=int(8*sf))
+    Tooltip(cache_label,  lambda: "Caching status", delay=500)
 
     # 运行主循环
     root.mainloop()
