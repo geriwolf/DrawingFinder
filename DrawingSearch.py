@@ -667,6 +667,11 @@ def search_vault_cache():
             return
     else:
         # 任何其他字符串，都当作是project name去匹配，去PARTS/S路径下查找匹配的目录
+        if not os.path.exists(os.path.join(vault_cache, "S")):
+            show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+            show_result_list(None) # 目录不存在就清空已有搜索结果
+            enable_search_button() # 启用搜索按钮
+            return
         for dir_name in os.listdir(os.path.join(vault_cache, "S")):
             dir_path= os.path.join(vault_cache, "S", dir_name)
             if os.path.isdir(dir_path) and query.lower() in dir_name.lower():
@@ -917,6 +922,12 @@ def ask_user_to_select_directory(directories):
         if display_name.lower().startswith("s") and not display_name.lower().startswith("stk"):
             display_name = display_name[1:]
         listbox.insert(tk.END, f"{display_name}")
+
+    for i in range(listbox.size()):
+        if i % 2 == 0:
+            listbox.itemconfig(i, {'bg': '#E6F7FF'})  # 浅蓝色
+        else:
+            listbox.itemconfig(i, {'bg': 'white'})  # 白色
 
     selected_dir = [None]  # 用列表存储选择结果
     listbox.bind("<<ListboxSelect>>", on_list_select)  # 单击事件
@@ -1189,7 +1200,7 @@ def toggle_window_size():
         # 创建快捷按钮框架
         if not shortcut_frame:
             shortcut_frame = tk.Frame(root)
-            shortcut_frame.place(x=int(340*sf), y=int(43*sf), width=int(200*sf), height=int(240*sf))  # 定位到右侧扩展区域
+            shortcut_frame.place(x=int(340*sf), y=int(43*sf), width=int(200*sf), height=int(230*sf))  # 定位到右侧扩展区域
 
         for i, shortcut in enumerate(shortcut_paths):
             btn = tk.Button(
