@@ -21,7 +21,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.2.1"  # 版本号
+ver = "1.1.13"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -31,12 +31,12 @@ feeling_lucky_pressed = False  # 标志位，用于 "I'm Feeling Lucky!" 按钮
 window_expanded = False  # 设置标志位，表示窗口是否已经扩展
 about_window_open = False # about窗口是否打开的标志位
 window_width = 345
-expand_window_width = 560
+expand_window_width = 580
 window_height = 315
 stop_event = threading.Event()
 active_threads = set()
 shortcut_frame = None  # 用于快捷访问按钮的框架
-default_parts_path = os.path.normpath("K:\\PARTS") # 默认 PARTS 目录
+default_parts_path = os.path.normpath("C:\\Users\\wtang\\OneDrive - BellatRX\\Workspace\\PARTS")
 vault_cache = os.path.normpath("C:\\_Vault Working Folder\\Designs\\PARTS")  # Vault 缓存目录
 # 全局缓存字典，键为目录路径，值为该目录下的所有文件信息列表
 directory_cache = collections.OrderedDict()  # 使用 OrderedDict 维护缓存顺序
@@ -857,12 +857,8 @@ def search_vault_cache_thread(query, search_directory):
 def ask_user_to_select_directory(directories):
     """弹出对话框让用户选择project目录"""
 
-    def on_list_select(event):
-        # 列表单击激活选择按钮
-        select_btn.config(state=tk.NORMAL)
-
     def on_double_click(event):
-        # 列表双击选择
+        # 双击选择
         selected_index = event.widget.curselection()
         if selected_index:
             selected_dir[0] = directories[selected_index[0]]
@@ -880,13 +876,13 @@ def ask_user_to_select_directory(directories):
     choice_win.attributes("-topmost", True)
     choice_win.iconphoto(True, icon) # 设置窗口图标
     choice_win.title("Select Project")
-    choice_win_width = int(280*sf)
-    choice_win_height = int(200*sf)
-    choice_win.geometry(f"{choice_win_width}x{choice_win_height}")
+    choice_win.geometry("280x200")
     choice_win.resizable(False, False)
 
     # 窗口位置，跟随主窗口初始大小居中显示，方便鼠标选取
     choice_win.update_idletasks()
+    choice_win_width = choice_win.winfo_width()
+    choice_win_height = choice_win.winfo_height()
     position_right = int(root.winfo_x() + window_width/2 - choice_win_width/2)
     position_down = int(root.winfo_y() + window_height/2 - choice_win_height/2)
     choice_win.geometry(f"+{position_right}+{position_down}")
@@ -894,17 +890,17 @@ def ask_user_to_select_directory(directories):
 
     # 主容器
     frame = tk.Frame(choice_win)
-    frame.pack(fill=tk.BOTH, expand=True, padx=int(15*sf), pady=int(10*sf))
+    frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
 
     # 提示文本
-    label = tk.Label(frame, text="Multiple projects were found, please select:", anchor="w")
+    label = tk.Label(frame, text="Multiple projects were found, please select:", font=("Arial", 9), anchor="w")
     label.pack(fill=tk.X)
 
     # 目录列表框
     list_frame = tk.Frame(frame)
-    list_frame.pack(fill=tk.BOTH, expand=True, pady=int(5*sf))
-    listbox = tk.Listbox(list_frame, width=20, height=6)
-    listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=int(5*sf))
+    list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+    listbox = tk.Listbox(list_frame, width=20, height=6, font=("Arial", 10))
+    listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5)
 
     # 创建Scrollbar并将其与Listbox关联
     scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
@@ -919,17 +915,15 @@ def ask_user_to_select_directory(directories):
         listbox.insert(tk.END, f"{display_name}")
 
     selected_dir = [None]  # 用列表存储选择结果
-    listbox.bind("<<ListboxSelect>>", on_list_select)  # 单击事件
     listbox.bind("<Double-1>", on_double_click)  # 双击事件
     btn_frame = tk.Frame(frame)
-    btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=int(15*sf), pady=int(3*sf))
+    btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=3)
 
-    cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=choice_win.destroy)
+    cancel_btn = tk.Button(btn_frame, text="Cancel", font=("Arial", 9), width=8, command=choice_win.destroy)
     cancel_btn.pack(side=tk.RIGHT, padx=0)
 
-    select_btn = tk.Button(btn_frame, text="Select Project", width=12, command=on_select)
-    select_btn.pack(side=tk.RIGHT, padx=int(15*sf))
-    select_btn.config(state=tk.DISABLED) # 默认禁用选择按钮
+    select_btn = tk.Button(btn_frame, text="Select Project", font=("Arial", 9), width=12, command=on_select)
+    select_btn.pack(side=tk.RIGHT, padx=15)
 
     # 等待窗口关闭
     choice_win.wait_window()
@@ -956,19 +950,12 @@ def show_result_list(result_files):
         result_frame.destroy()
     result_frame = tk.Frame(root)
     result_frame.pack(fill=tk.BOTH, expand=True, pady=0)
-    tip_label = tk.Label(result_frame, text=msg, fg="blue")
-    tip_label.pack(padx=int(20*sf), pady=0, anchor="w")
-
-    # 设置 Treeview 表头和行样式
-    style = ttk.Style()
-    style.configure("Treeview.Heading", padding=(0, int(4*sf)), background="#A9A9A9", foreground="black", font=("Arial", 10, "bold"))
-    style.configure("Treeview", rowheight=int(25*sf))
-    style.map("Treeview", background=[('selected', '#347083')])
+    tip_label = tk.Label(result_frame, text=msg, font=("Arial", 9), fg="blue")
+    tip_label.pack(padx=5, pady=0, anchor="w")
 
     # 添加 Treeview 控件显示结果
     columns = ("File Name", "Created Time", "Path")
     results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
-    results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
     results_tree.heading("File Name", text="File Name", anchor="w")
     results_tree.heading("Created Time", text="Created Time", anchor="w")
     results_tree.column("File Name", width=150, anchor="w")
@@ -978,6 +965,12 @@ def show_result_list(result_files):
     # 创建一个垂直滚动条并将其与 Treeview 关联
     scrollbar = ttk.Scrollbar(result_frame, orient=tk.VERTICAL, command=results_tree.yview)
     results_tree.configure(yscrollcommand=scrollbar.set)
+
+    # 设置 Treeview 表头和行样式
+    style = ttk.Style()
+    style.configure("Treeview.Heading", background="#A9A9A9", foreground="black", font=("Arial", 10, "bold"))
+    style.configure("Treeview", rowheight=25)
+    style.map("Treeview", background=[('selected', '#347083')])
 
     # 插入搜索结果
     for index, item in enumerate(result_files):
@@ -993,11 +986,11 @@ def show_result_list(result_files):
 
     # 动态调整窗口大小以显示结果
     root.update_idletasks()
-    new_height = int(420*sf) + len(result_files) * int(25*sf) if result_files else window_height
+    new_height = 420 + len(result_files) * 20 if result_files else window_height
     if window_expanded:
-        root.geometry(f"{expand_window_width}x{min(new_height, int(540*sf))}")
+        root.geometry(f"{expand_window_width}x{min(new_height, 600)}")
     else:
-        root.geometry(f"{window_width}x{min(new_height, int(540*sf))}")
+        root.geometry(f"{window_width}x{min(new_height, 600)}")
 
 def show_about():
     """自定义关于信息的窗口"""
@@ -1013,9 +1006,7 @@ def show_about():
     about_win.withdraw()  # 先隐藏窗口
     about_win.attributes("-topmost", True)
     about_win.title("About")
-    about_win_width = int(370*sf)
-    about_win_height = int(275*sf)
-    about_win.geometry(f"{about_win_width}x{about_win_height}")
+    about_win.geometry(f"{int(360*sf)}x{int(280*sf)}")
     about_win.resizable(False, False)
 
     # 窗口关闭时重置标志位
@@ -1028,8 +1019,10 @@ def show_about():
 
     # 窗口位置，跟随主窗口居中显示，不考虑Treeview高度
     about_win.update_idletasks()
+    about_win_width = about_win.winfo_width()
+    about_win_height = about_win.winfo_height()
     position_right = int(root.winfo_x() + root.winfo_width()/2 - about_win_width/2)
-    position_down = int(root.winfo_y() + window_height - about_win_height + 6)
+    position_down = int(root.winfo_y() + window_height - about_win_height)
     about_win.geometry(f"+{position_right}+{position_down}")
     about_win.deiconify() # 显示窗口
     
@@ -1042,23 +1035,23 @@ def show_about():
 
     # 左侧图标区域
     icon_frame = tk.Frame(main_frame, width=100)
-    icon_frame.pack(side=tk.LEFT, fill=tk.Y, padx=int(15*sf))
+    icon_frame.pack(side=tk.LEFT, fill=tk.Y, padx=int(10*sf))
     
     try:
         # 解码Base64图标并调整大小
         icon_data = base64.b64decode(ICON_BASE64)
         img = Image.open(io.BytesIO(icon_data))
-        img = img.resize((int(64*sf), int(64*sf)), Image.Resampling.LANCZOS)  # 调整图标尺寸
+        img = img.resize((64, 64), Image.Resampling.LANCZOS)  # 调整图标尺寸
         tk_img = ImageTk.PhotoImage(img)
         icon_label = tk.Label(icon_frame, image=tk_img)
         icon_label.image = tk_img  # 保持引用
-        icon_label.pack(pady=int(30*sf))
+        icon_label.pack(pady=int(20*sf))
     except Exception as e:
         print(f"Error loading icon: {e}")
 
     # 右侧文本区域
     text_frame = tk.Frame(main_frame)
-    text_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=int(15*sf))
+    text_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=int(20*sf))
 
     # 文本内容
     about_text = [
@@ -1073,9 +1066,9 @@ def show_about():
     # 文本标签
     for i, text in enumerate(about_text):
         if i == 0:
-            label = tk.Label(text_frame, text=text, font=("Arial", 10, "bold"), anchor="w")
+            label = ttk.Label(text_frame, text=text, font=("Arial", 10, "bold"), anchor="w")
         else:
-            label = tk.Label(text_frame, text=text, anchor="w")
+            label = ttk.Label(text_frame, text=text, font=("Arial", 9), anchor="w")
         label.pack(anchor="w", fill=tk.X)
 
     # 邮箱按钮和地址
@@ -1086,10 +1079,10 @@ def show_about():
     email_label.pack(side=tk.LEFT, padx=0)
     email_label.bind("<Button-1>", lambda event: send_email())
 
-    email_label = tk.Label(email_frame, text=": wtweitang@hotmail.com")
+    email_label = tk.Label(email_frame, text=": wtweitang@hotmail.com", font=("Arial", 9))
     email_label.pack(side=tk.LEFT)
 
-    ok_button = tk.Button(about_win, text="OK", width=12, command=on_close)
+    ok_button = ttk.Button(about_win, text="OK", width=12, command=on_close)
     ok_button.pack(padx=int(15*sf), pady=int(15*sf), side=tk.RIGHT)
 
 def send_email():
@@ -1189,16 +1182,16 @@ def toggle_window_size():
         # 创建快捷按钮框架
         if not shortcut_frame:
             shortcut_frame = tk.Frame(root)
-            shortcut_frame.place(x=int(340*sf), y=int(43*sf), width=int(200*sf), height=int(240*sf))  # 定位到右侧扩展区域
+            shortcut_frame.place(x=int(350*sf), y=int(42*sf), width=int(200*sf), height=int(250*sf))  # 定位到右侧扩展区域
 
         for i, shortcut in enumerate(shortcut_paths):
-            btn = tk.Button(
+            btn = ttk.Button(
                 shortcut_frame, 
                 text=shortcut["label"],
                 width=100, 
                 command=lambda i=i: open_shortcut(i)
             )
-            btn.pack(padx=int(10*sf), pady=int(5*sf), anchor="w")
+            btn.pack(pady=int(6*sf), padx=int(10*sf), anchor="w")
 
     window_expanded = not window_expanded  # 切换状态
 
@@ -1257,9 +1250,7 @@ def open_mini_window():
     mini_win = tk.Toplevel(root)
     mini_win.withdraw()  # 先隐藏窗口
     mini_win.title("Drawing Search")
-    mini_win_width = int(255*sf)
-    mini_win_height = int(40*sf)
-    mini_win.geometry(f"{mini_win_width}x{mini_win_height}")
+    mini_win.geometry("260x50")
     mini_win.attributes("-topmost", True) # 窗口置顶
     mini_win.attributes('-alpha', 0.6)  # 设置窗口透明度
     mini_win.resizable(False, False)
@@ -1269,6 +1260,8 @@ def open_mini_window():
 
     # 窗口位置，跟随主窗口居中显示
     mini_win.update_idletasks()
+    mini_win_width = mini_win.winfo_width()
+    mini_win_height = mini_win.winfo_height()
     position_right = int(root.winfo_x() + root.winfo_width()/2 - mini_win_width/2)
     position_down = int(root.winfo_y() + mini_win_height)
     mini_win.geometry(f"+{position_right}+{position_down}")
@@ -1276,11 +1269,11 @@ def open_mini_window():
     
     # 创建 mini 窗口的框架
     mini_frame = tk.Frame(mini_win)
-    mini_frame.pack(pady=int(5*sf))
+    mini_frame.pack(pady=10)
 
     # 在框架中添加一个输入框
-    mini_entry = tk.Entry(mini_frame, font=("Arial", 14), width=13)
-    mini_entry.pack(side="left", pady=0, padx=int(5*sf))
+    mini_entry = tk.Entry(mini_frame, font=("Arial", 14), width=12)
+    mini_entry.pack(side="left", pady=0, padx=5)
     mini_entry.focus()
     
     # 定义 mini 窗口的搜索操作
@@ -1300,8 +1293,8 @@ def open_mini_window():
     mini_entry.bind("<Return>", on_search_mini)
     
     # 添加搜索按钮
-    search_btn_mini = tk.Button(mini_frame, text="Search", width=8, command=on_search_mini)
-    search_btn_mini.pack(side="right", padx=int(5*sf))
+    search_btn_mini = tk.Button(mini_frame, text="Search", font=("Arial", 9), width=8, command=on_search_mini)
+    search_btn_mini.pack(side="right", padx=5)
 
     # 如果用户直接关闭 mini 窗口，则重新显示主窗口
     mini_win.protocol("WM_DELETE_WINDOW", lambda: (mini_win.destroy(), root.deiconify()))
@@ -1311,12 +1304,16 @@ try:
     # 适配系统缩放比例
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
     ScaleFactor=ctypes.windll.shcore.GetScaleFactorForDevice(0)
+    print(ScaleFactor)
     sf = ScaleFactor/100
     tk_sf = sf*(96/72)
     
+    print(sf)
+    
+
     root = tk.Tk()
     root.withdraw()  # 先隐藏窗口
-    root.tk.call('tk', 'scaling', tk_sf)  # 设置tk的缩放比例,调整控件和字体大小
+    root.tk.call('tk', 'scaling', tk_sf)  # 设置缩放比例
     # 将 Base64 解码为二进制
     icon_data = base64.b64decode(ICON_BASE64)
     # 通过 BytesIO 读取 ICO 图标
@@ -1326,13 +1323,15 @@ try:
     root.iconphoto(True, icon)
     root.title("Drawing Search")
     # 根据系统缩放比例调整窗口大小
-    window_width = int(window_width*sf)
-    window_height = int(window_height*sf)
-    expand_window_width = int(expand_window_width*sf)
+    window_width = int(window_width * sf)
+    window_height = int(window_height * sf)
+    expand_window_width = int(expand_window_width * sf)
+    print(window_width, window_height)
     root.geometry(f"{window_width}x{window_height}")  # 初始窗口大小
-    root.resizable(False, False)
+    #root.resizable(False, False)
     # 窗口居中偏上显示
     center_window(root, window_width, window_height)
+    #root.attributes("-alpha", 0.6)  # 设置窗口透明度
     root.deiconify() # 显示窗口
     
     # 第一行标签的框架
@@ -1344,7 +1343,7 @@ try:
     prompt_label.pack(side=tk.LEFT, padx=(int(20*sf), 0))
 
     # 添加置顶选项
-    # 创建复选框的 Style
+    # 创建一个 Style
     style = ttk.Style()
     style.configure("Custom.TCheckbutton", font=("Arial", 13))  # 设置字体大小
 
@@ -1373,55 +1372,44 @@ try:
     entry.bind("<Button-1>", show_search_history)  # 点击输入框时显示历史记录
     entry.bind("<KeyRelease>", show_search_history)  # 输入时实时更新匹配历史
     # 用于显示警告信息的标签
-    warning_label = tk.Label(entry_frame, text="", font=("Arial", 9), fg="red", anchor="w")
+    warning_label = tk.Label(entry_frame, text=" ", font=("Arial", 9), fg="red", anchor="w")
     warning_label.pack(fill="x", padx=int(20*sf))
 
     # 用户点击非 Listbox 或 Entry 区域时销毁 Listbox
     root.bind("<Button-1>", hide_history)
 
     # 添加按钮框架
-    button_frame = tk.Frame(root)
+    button_frame = tk.Frame(root, bg="lightblue", width=300, height=200)
     button_frame.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
 
-    # 按钮宽度无法根据缩放比例在布局内进行同比例调整，所以指定宽度
-    btn_width = 20
-    if ScaleFactor == 100:
-        btn_width = 18
-    elif ScaleFactor in [125, 150]:
-        btn_width = 20
-    elif ScaleFactor == 175:
-        btn_width = 19
-    else:
-        btn_width = int(20*sf)
-
     # Search PDF 按钮
-    search_btn = tk.Button(button_frame, text="Search PDF Drawing", width=btn_width, command=search_pdf_files)
-    search_btn.grid(row=0, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
+    search_btn = ttk.Button(button_frame, text="Search PDF Drawing", width=20, command=search_pdf_files)
+    search_btn.grid(row=0, column=0, padx=int(8*sf), pady=int(8*sf))
     Tooltip(search_btn, lambda: "Search for PDF files matching the entered keywords", delay=500)
 
     # I'm Feeling Lucky 按钮
-    lucky_btn = tk.Button(button_frame, text="I'm Feeling Lucky!", width=btn_width, command=feeling_lucky)
-    lucky_btn.grid(row=0, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
+    lucky_btn = ttk.Button(button_frame, text="I'm Feeling Lucky!", width=20, command=feeling_lucky)
+    lucky_btn.grid(row=0, column=1, padx=int(8*sf), pady=int(8*sf))
     Tooltip(lucky_btn, lambda: "Open the latest revision of the PDF drawing", delay=500)
 
     # Search 3D drawing 按钮
-    search_3d_btn = tk.Button(button_frame, text="Search 3D Drawing", width=btn_width, command=search_3d_files)
-    search_3d_btn.grid(row=1, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
+    search_3d_btn = ttk.Button(button_frame, text="Search 3D Drawing", width=20, command=search_3d_files)
+    search_3d_btn.grid(row=1, column=0, padx=int(8*sf), pady=int(8*sf))
     Tooltip(search_3d_btn, lambda: "Search for 3D files (.iam/.ipt) matching the entered keywords", delay=500)
 
     # Search vault cache 按钮
-    search_cache_btn = tk.Button(button_frame, text="Search in Vault Cache", width=btn_width, command=search_vault_cache)
-    search_cache_btn.grid(row=1, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
+    search_cache_btn = ttk.Button(button_frame, text="Search in Vault Cache", width=20, command=search_vault_cache)
+    search_cache_btn.grid(row=1, column=1, padx=int(8*sf), pady=int(8*sf))
     Tooltip(search_cache_btn, lambda: "Search 3D drawings (.iam/.ipt) from local Vault cache\rSupport searching by project name", delay=500)
 
     # Reset 按钮
-    reset_btn = tk.Button(button_frame, text="Reset", width=btn_width, command=reset_window)
-    reset_btn.grid(row=2, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
+    reset_btn = ttk.Button(button_frame, text="Reset", width=20, command=reset_window)
+    reset_btn.grid(row=2, column=0, padx=int(8*sf), pady=int(8*sf))
     Tooltip(reset_btn, lambda: "Reset the window to default, stop the current search\rand clear search cache", delay=500)
 
     # 扩展按钮
-    expand_btn = tk.Button(button_frame, text="Quick Access   >>", width=btn_width, command=toggle_window_size)
-    expand_btn.grid(row=2, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
+    expand_btn = ttk.Button(button_frame, text="Quick Access   >>", width=20, command=toggle_window_size)
+    expand_btn.grid(row=2, column=1, padx=int(8*sf), pady=int(8*sf))
     Tooltip(expand_btn, lambda: "Shortcuts to frequently used folders and files", delay=500)
 
     # 显示默认目录及更改功能
@@ -1447,7 +1435,7 @@ try:
     about_frame = tk.Frame(root)
     about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
     about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Arial Unicode MS", 13, "bold"))
-    about_label.pack(anchor="e", padx=int(10*sf), pady=int(8*sf))
+    about_label.pack(anchor="e", padx=int(10*sf), pady=int(10*sf))
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
 
