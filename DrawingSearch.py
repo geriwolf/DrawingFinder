@@ -21,7 +21,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.2.1"  # 版本号
+ver = "1.2.2"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -79,8 +79,8 @@ class Tooltip:
             return
 
         x, y, _, _ = self.widget.bbox("insert")  # 获取Label的位置
-        x += self.widget.winfo_rootx() + 20
-        y += self.widget.winfo_rooty() + 20
+        x += self.widget.winfo_rootx() + int(20*sf)
+        y += self.widget.winfo_rooty() + int(20*sf)
 
         # 创建一个新的 Tooltip 窗口
         self.tooltip_window = tw = tk.Toplevel(self.widget)
@@ -89,7 +89,7 @@ class Tooltip:
         tw.attributes("-topmost", True)  # 确保窗口在最上层
 
         label = tk.Label(tw, text=text, justify="left", background="#ffffe0", relief="solid", borderwidth=1, font=("Arial", 9))
-        label.pack(ipadx=5, ipady=3)
+        label.pack(ipadx=int(5*sf), ipady=int(3*sf))
 
     def hide_tooltip(self, event=None):
         """隐藏提示"""
@@ -108,8 +108,8 @@ class Tooltip:
             self.last_motion_time = current_time
         '''
         if self.tooltip_window:
-            x = event.x_root + 20
-            y = event.y_root + 20
+            x = event.x_root + int(20*sf)
+            y = event.y_root + int(20*sf)
             self.tooltip_window.wm_geometry(f"+{x}+{y}")
 
 def show_warning_message(message):
@@ -297,8 +297,8 @@ def build_directory_cache_thread(search_directory):
     active_threads.add(thread)
     thread.name = f"cache_thread_{search_directory}"
     
+    # 缓存开始，更改cache_label的颜色
     root.after(0, lambda: cache_label.config(fg="red"))
-    root.after(0, lambda: Tooltip(cache_label,  lambda: "Caching in progress", delay=500))
 
     try:
         files_info = []
@@ -329,14 +329,50 @@ def build_directory_cache_thread(search_directory):
             directory_cache[search_directory] = files_info
             directory_cache.move_to_end(search_directory)
 
-            root.after(0, lambda: cache_label.config(fg="green"))
-            root.after(0, lambda: Tooltip(cache_label,  lambda: "Caching completed", delay=500))
-
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in cache thread: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
+        show_cache_status()
+
+def get_cache_str():
+    # 获取cache的目录并返回字符串
+    cache_pattern = re.compile(r"cache_thread_.*?\\([^\\,]+)(?=\s|,|$)")
+    caching_list = [match.group(1) for item in active_threads if (match := cache_pattern.search(str(item)))]
+    cached_dir = [re.search(r'\\([^\\]+)$', key).group(1) for key in directory_cache.keys()]
+    if not caching_list:
+        # 没有正在缓存的目录
+        if not cached_dir:
+            # 没有已缓存的目录
+            return f"Cache status"
+        else:
+            # 有已缓存的目录
+            return f"Cache completed: [{', '.join(cached_dir)}]"
+    else:
+        # 有正在缓存的目录
+        if not cached_dir:
+            # 没有已缓存的目录
+            return f"Caching in progress: [{', '.join(caching_list)}]"
+        else:
+            # 有已缓存的目录
+            return f"Caching in progress: [{', '.join(caching_list)}]\rCache completed: [{', '.join(cached_dir)}]"
+
+def show_cache_status():
+    # 获取cache的状态并设置颜色
+    cache_pattern = re.compile(r"cache_thread_.*?\\([^\\,]+)(?=\s|,|$)")
+    caching_list = [match.group(1) for item in active_threads if (match := cache_pattern.search(str(item)))]
+
+    # 如果点击了重置按钮，直接改为灰色
+    if stop_event.is_set():
+        root.after(0, lambda: cache_label.config(fg="lightgray"))
+        return
+    
+    if not caching_list:
+        root.after(0, lambda: cache_label.config(fg="lightgreen"))
+    else:
+        root.after(0, lambda: cache_label.config(fg="red"))
+
 
 def get_cached_directory(search_directory):
     """
@@ -1136,8 +1172,9 @@ def reset_window():
 
     # 清空目录缓存
     directory_cache.clear()
+
+    # 重置cache label颜色
     cache_label.config(fg="lightgray")
-    Tooltip(cache_label,  lambda: "Caching status", delay=500)
     
     entry.delete(0, tk.END)  # 清空输入框
     hide_warning_message()  # 清除警告信息
@@ -1326,6 +1363,14 @@ def open_mini_window():
     # 如果用户直接关闭 mini 窗口，则重新显示主窗口
     mini_win.protocol("WM_DELETE_WINDOW", lambda: (mini_win.destroy(), root.deiconify()))
 
+def on_root_close():
+    # 关闭主窗口时清除所有未完成的线程
+    stop_event.set()  # 发送退出信号
+    # 等待所有线程结束
+    for thread in list(active_threads):
+        thread.join(timeout=0.5)  # 最多等 0.5 秒
+    root.destroy()  # 关闭窗口
+
 # 创建主窗口
 try:
     # 适配系统缩放比例
@@ -1354,6 +1399,7 @@ try:
     # 窗口居中偏上显示
     center_window(root, window_width, window_height)
     root.deiconify() # 显示窗口
+    root.protocol("WM_DELETE_WINDOW", on_root_close)  # 绑定关闭事件，清除所有线程
     
     # 第一行标签的框架
     label_frame = tk.Frame(root)
@@ -1470,9 +1516,11 @@ try:
     about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=int(8*sf))
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
+
+    # 显示缓存状态, 灰色无缓存，绿色缓存已完成，红色正在缓存
     cache_label = tk.Label(about_frame, text="●", fg="lightgray")
     cache_label.pack(side=tk.RIGHT, padx=0, pady=int(8*sf))
-    Tooltip(cache_label,  lambda: "Caching status", delay=500)
+    tooltip_instance = Tooltip(cache_label, get_cache_str, delay=500)
 
     # 运行主循环
     root.mainloop()
