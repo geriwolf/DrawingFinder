@@ -369,7 +369,7 @@ def show_cache_status():
         return
     
     if not caching_list:
-        root.after(0, lambda: cache_label.config(fg="lightgreen"))
+        root.after(0, lambda: cache_label.config(fg="lime"))
     else:
         root.after(0, lambda: cache_label.config(fg="red"))
 
