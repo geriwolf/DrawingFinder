@@ -112,16 +112,12 @@ class Tooltip:
             y = event.y_root + int(20*sf)
             self.tooltip_window.wm_geometry(f"+{x}+{y}")
 
-def show_warning_message(message):
+def show_warning_message(message, color):
     """在输入框下方显示警告信息"""
     global warning_label
     if warning_label is None:
         return
-    if "Tip" in message:
-        warning_label.config(fg="blue")  # 提示类的信息用蓝色显示
-    else:
-        warning_label.config(fg="red")
-    warning_label.config(text=message)
+    warning_label.config(text=message, fg=color)
 
 def hide_warning_message():
     """隐藏警告信息"""
@@ -391,13 +387,13 @@ def search_pdf_files(is_feeling_lucky=False):
     query = entry.get().strip() # 去除首尾空格
     
     if not query:
-        show_warning_message("Please enter any number or project name!")
+        show_warning_message("Please enter any number or project name!", "red")
         enable_search_button() # 启用搜索按钮
         return
 
     # 检查是否包含非法字符
     if any(char in query for char in "*.?+^$[]{}|\\()"):
-        show_warning_message("Invalid characters in search query!")
+        show_warning_message("Invalid characters in search query!", "red")
         enable_search_button() # 启用搜索按钮
         return
 
@@ -411,13 +407,13 @@ def search_pdf_files(is_feeling_lucky=False):
         search_directory = os.path.join(default_parts_path, prefix)
 
     if not os.path.exists(search_directory):
-        show_warning_message(f"Path does not exist! {search_directory}")
+        show_warning_message(f"Path does not exist! {search_directory}", "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
         return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.")
+    show_warning_message(f"Searching... Please wait.", "red")
     query = query.lower()
     # 对STK的project number进行特殊处理
     if query.startswith("stk") and len(query) > 3:
@@ -468,7 +464,7 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
                         return
                     # 每遍历50个文件，显示一次文件名，体现搜索过程
                     if i == 50:
-                        root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}"))
+                        root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
                         i = 0
                     i += 1
                     if file.endswith(".pdf") and match_func(file):
@@ -485,7 +481,7 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
                 file_name = file_info[0]
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
                 if i == 50:
-                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}"))
+                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}", "red"))
                     i = 0
                 i += 1
                 if file_name.endswith(".pdf") and match_func(file_name):
@@ -502,7 +498,7 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
 
         # 如果没有搜索到匹配的文件，显示警告信息
         if not result_files:
-            root.after(0, lambda: show_warning_message("No matching drawing PDF found!"))
+            root.after(0, lambda: show_warning_message("No matching drawing PDF found!", "red"))
         else:
             if is_feeling_lucky:
                 # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
@@ -526,13 +522,13 @@ def search_3d_files():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message("Please enter any number or project name!")
+        show_warning_message("Please enter any number or project name!", "red")
         enable_search_button() # 启用搜索按钮
         return
     
     # 检查是否包含非法字符
     if any(char in query for char in "*.?+^$[]{}|\\()"):
-        show_warning_message("Invalid characters in search query!")
+        show_warning_message("Invalid characters in search query!", "red")
         enable_search_button() # 启用搜索按钮
         return
 
@@ -546,13 +542,13 @@ def search_3d_files():
         search_directory = os.path.join(default_parts_path, prefix)
 
     if not os.path.exists(search_directory):
-        show_warning_message(f"Path does not exist! {search_directory}")
+        show_warning_message(f"Path does not exist! {search_directory}", "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
         return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.")
+    show_warning_message(f"Searching... Please wait.", "red")
     query = query.lower()
     # 对STK的project number进行特殊处理
     if query.startswith("stk") and len(query) > 3:
@@ -603,7 +599,7 @@ def search_3d_files_thread(query, search_directory):
                         return
                     # 每遍历50个文件，显示一次文件名，体现搜索过程
                     if i == 50:
-                        root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}"))
+                        root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
                         i = 0
                     i += 1
                     if (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
@@ -619,7 +615,7 @@ def search_3d_files_thread(query, search_directory):
                 file_name = file_info[0]
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
                 if i == 50:
-                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}"))
+                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}", "red"))
                     i = 0
                 i += 1
                 if (file_name.endswith(".iam") or file_name.endswith(".ipt")) and match_func(file_name):
@@ -633,7 +629,7 @@ def search_3d_files_thread(query, search_directory):
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
 
         if not result_files:
-            root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache."))
+            root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache.", "red"))
 
         # 排序结果（按文件名排序）
         result_files.sort(key=lambda x: x[0])
@@ -652,13 +648,13 @@ def search_vault_cache():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message("Please enter any number or project name!")
+        show_warning_message("Please enter any number or project name!", "red")
         enable_search_button() # 启用搜索按钮
         return
     
     # 检查是否包含非法字符
     if any(char in query for char in "*.?+^$[]{}|\\()"):
-        show_warning_message("Invalid characters in search query!")
+        show_warning_message("Invalid characters in search query!", "red")
         enable_search_button() # 启用搜索按钮
         return
 
@@ -670,7 +666,7 @@ def search_vault_cache():
 
     if not os.path.exists(vault_cache):
         # 如果Vault缓存目录不存在，提示用户使用Vault
-        show_warning_message(f"Vault cache not found! Please use Vault instead.")
+        show_warning_message(f"Vault cache not found! Please use Vault instead.", "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
         return
@@ -703,14 +699,14 @@ def search_vault_cache():
         prefix = query[:2]
         search_directory = os.path.join(vault_cache, prefix)
         if not os.path.exists(search_directory):
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+            show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
             show_result_list(None) # 目录不存在就清空已有搜索结果
             enable_search_button() # 启用搜索按钮
             return
     else:
         # 任何其他字符串，都当作是project name去匹配，去PARTS/S路径下查找匹配的目录
         if not os.path.exists(os.path.join(vault_cache, "S")):
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+            show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
             show_result_list(None) # 目录不存在就清空已有搜索结果
             enable_search_button() # 启用搜索按钮
             return
@@ -763,7 +759,7 @@ def search_vault_cache():
                         else:
                             query = sub_dir
             else:
-                show_warning_message("Cancelled!")
+                show_warning_message("Cancelled!", "red")
                 enable_search_button() # 启用搜索按钮
                 return
         else:
@@ -771,7 +767,7 @@ def search_vault_cache():
             prefix = query[:2]
             search_directory = os.path.join(vault_cache, prefix)
             if not os.path.exists(search_directory):
-                show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+                show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
                 show_result_list(None) # 目录不存在就清空已有搜索结果
                 enable_search_button() # 启用搜索按钮
                 return
@@ -817,17 +813,17 @@ def search_vault_cache():
                         else:
                             query = sub_dir
             else:
-                show_warning_message("Cancelled!")
+                show_warning_message("Cancelled!", "red")
                 enable_search_button() # 启用搜索按钮
                 return
         else:
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!")
+            show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
             show_result_list(None) # 目录不存在就清空已有搜索结果
             enable_search_button() # 启用搜索按钮
             return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.")
+    show_warning_message(f"Searching... Please wait.", "red")
     if query.lower().startswith("stk"):
         if len(query) > 3:
             if query[3] == '-' or query[3] == ' ':
@@ -870,7 +866,7 @@ def search_vault_cache_thread(query, search_directory):
                     return
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
                 if i == 50:
-                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}"))
+                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
                     i = 0
                 i += 1
                 if (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
@@ -883,9 +879,9 @@ def search_vault_cache_thread(query, search_directory):
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
 
         if not result_files:
-            root.after(0, lambda: show_warning_message("No matching 3D drawings are cached. Check in Vault!"))
+            root.after(0, lambda: show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red"))
         else:
-            root.after(0, lambda: show_warning_message("Tip: Searched from cache, may not be the latest update!"))
+            root.after(0, lambda: show_warning_message("Tip: Searched from cache, may not be the latest update!", "blue"))
         if len(query) > 2 and query[2].isdigit():
             # 如果是project number，按文件名正序排列
             result_files.sort(key=lambda x: x[0])
@@ -1185,7 +1181,7 @@ def reset_window():
         results_tree = None
     root.geometry(f"{window_width}x{window_height}")  # 恢复初始窗口大小
     if window_expanded:
-        expand_btn.config(text="Quick Access   >>")  # 改为 ">>"
+        expand_btn.config(text="Quick Access   ❯❯")  # 改为 "❯❯"
         window_expanded = not window_expanded  # 切换状态
         if shortcut_frame:
             shortcut_frame.destroy()
@@ -1228,7 +1224,7 @@ def toggle_window_size():
         else:
             # 收缩窗口，隐藏快捷按钮框架
             root.geometry(f"{window_width}x{window_height}")  # 恢复到原始大小
-        expand_btn.config(text="Quick Access   >>")  # 改为 ">>"
+        expand_btn.config(text="Quick Access   ❯❯")  # 改为 "❯❯"
         if shortcut_frame:
             shortcut_frame.destroy()
             shortcut_frame = None
@@ -1240,7 +1236,7 @@ def toggle_window_size():
         else:
             # 扩展窗口，显示快捷按钮框架
             root.geometry(f"{expand_window_width}x{window_height}")  # 扩展窗口大小
-        expand_btn.config(text="Quick Access   <<")  # 改为 "<<"
+        expand_btn.config(text="Quick Access   ❮❮")  # 改为 "❮❮"
 
         # 创建快捷按钮框架
         if not shortcut_frame:
@@ -1486,7 +1482,7 @@ try:
     Tooltip(reset_btn, lambda: "Reset the window to default, stop the current search\rand clear search cache", delay=500)
 
     # 扩展按钮
-    expand_btn = tk.Button(button_frame, text="Quick Access   >>", width=btn_width, command=toggle_window_size)
+    expand_btn = tk.Button(button_frame, text="Quick Access   ❯❯", width=btn_width, command=toggle_window_size)
     expand_btn.grid(row=2, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(expand_btn, lambda: "Shortcuts to frequently used folders and files", delay=500)
 
