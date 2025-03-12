@@ -11,7 +11,7 @@ import ctypes
 from tkinter import filedialog
 from tkinter import ttk
 from PIL import Image, ImageTk
-from icon_base64 import ICON_BASE64
+from logo import ICON_BASE64
 
 try:
     import tkinter as tk
