@@ -1454,7 +1454,7 @@ try:
     elif ScaleFactor == 175:
         btn_width = 19
     else:
-        btn_width = int(20*sf)
+        btn_width = 20
 
     # Search PDF 按钮
     search_btn = tk.Button(button_frame, text="Search PDF Drawing", width=btn_width, command=search_pdf_files)
