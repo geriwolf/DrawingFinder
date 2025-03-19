@@ -21,16 +21,18 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.0"  # 版本号
+ver = "1.2.2"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
 results_tree = None  # 搜索结果的 Treeview 控件
 history_listbox = None  # 用于显示搜索历史的列表框
+feeling_lucky_pressed = False  # 标志位，用于 "I'm Feeling Lucky!" 按钮
 window_expanded = False  # 设置标志位，表示窗口是否已经扩展
+about_window_open = False # about窗口是否打开的标志位
 window_width = 345
 expand_window_width = 560
-window_height = 300
+window_height = 315
 stop_event = threading.Event()
 active_threads = set()
 shortcut_frame = None  # 用于快捷访问按钮的框架
@@ -51,49 +53,46 @@ shortcut_paths = [
 ]
 
 class Tooltip:
-    def __init__(self, widget, get_text_callback, delay=500, movedelay=16):
+    def __init__(self, widget, get_text_callback, delay=500):
         self.widget = widget
         self.get_text_callback = get_text_callback  # 动态获取文字
         self.delay = delay  # 延迟时间（毫秒）
         self.tooltip_window = None
         self.after_id = None
-        self.last_update = 0  # 记录上次更新时间
-        self.movedelay = movedelay  # 16ms ≈ 60FPS（相当于节流）
+        # self.last_motion_time = 0  # 用于防抖处理的变量，避免实时更新影响性能
 
         self.widget.bind("<Enter>", self.schedule_show)
         self.widget.bind("<Leave>", self.hide_tooltip)
-        self.widget.bind("<Motion>", self.throttle_move)
+        self.widget.bind("<Motion>", self.update_position)
 
     def schedule_show(self, event):
         """安排显示提示"""
-        if self.after_id:
-            self.widget.after_cancel(self.after_id)
-        self.after_id = self.widget.after(self.delay, lambda: self.show_tooltip(event))
+        self.after_id = self.widget.after(self.delay, self.show_tooltip)
 
     def show_tooltip(self, event=None):
-        """显示 Tooltip"""
+        """在鼠标位置显示提示"""
         if self.tooltip_window or not self.get_text_callback:
             return
 
-        text = self.get_text_callback()
+        text = self.get_text_callback()  # 动态获取当前文字
         if not text:
             return
-        
-        # 获取鼠标的位置
-        x = event.x_root + int(10*sf)
-        y = event.y_root + int(10*sf)
-        # 创建 Tooltip 窗口
+
+        x, y, _, _ = self.widget.bbox("insert")  # 获取Label的位置
+        x += self.widget.winfo_rootx() + int(20*sf)
+        y += self.widget.winfo_rooty() + int(20*sf)
+
+        # 创建一个新的 Tooltip 窗口
         self.tooltip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)  # 去掉边框
-        tw.attributes("-topmost", True)  # 确保窗口始终在最上层
         tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True)  # 确保窗口在最上层
 
-        # 创建 Tooltip Label
-        label = ttk.Label(tw, text=text, style="Tooltip.TLabel", relief="solid", borderwidth=1, font=("Segoe UI", 9), padding=(5, 1, 5, 1))
-        label.pack()
+        label = tk.Label(tw, text=text, justify="left", background="#ffffe0", relief="solid", borderwidth=1, font=("Arial", 9))
+        label.pack(ipadx=int(5*sf), ipady=int(3*sf))
 
     def hide_tooltip(self, event=None):
-        """隐藏 Tooltip"""
+        """隐藏提示"""
         if self.after_id:
             self.widget.after_cancel(self.after_id)
             self.after_id = None
@@ -101,19 +100,16 @@ class Tooltip:
             self.tooltip_window.destroy()
             self.tooltip_window = None
 
-    def throttle_move(self, event):
-        """节流鼠标移动事件，减少 Tooltip 位置更新频率"""
-        now = event.time
-        if now - self.last_update < self.movedelay:
-            return
-        self.last_update = now
-        self.update_position(event)
-
     def update_position(self, event):
-        """更新 Tooltip 位置"""
+        """更新工具提示的位置"""
+        ''' # 防抖处理 
+        current_time = time.time()
+        if current_time - self.last_motion_time > 0.1:  # 100毫秒防抖
+            self.last_motion_time = current_time
+        '''
         if self.tooltip_window:
-            x = event.x_root + int(10*sf)
-            y = event.y_root + int(10*sf)
+            x = event.x_root + int(20*sf)
+            y = event.y_root + int(20*sf)
             self.tooltip_window.wm_geometry(f"+{x}+{y}")
 
 def show_warning_message(message, color):
@@ -121,7 +117,7 @@ def show_warning_message(message, color):
     global warning_label
     if warning_label is None:
         return
-    warning_label.config(text=message, foreground=color)
+    warning_label.config(text=message, fg=color)
 
 def hide_warning_message():
     """隐藏警告信息"""
@@ -131,7 +127,6 @@ def hide_warning_message():
 
 def open_shortcut(index):
     """打开快捷访问的路径或文件"""
-    entry.focus() # 焦点重新回到输入框
     path = shortcut_paths[index]["path"]
 
     if os.path.exists(path):
@@ -169,17 +164,20 @@ def open_shortcut(index):
 
 def update_directory():
     """更新搜索目录"""
-    global changed_parts_path
-    new_dir = filedialog.askdirectory(initialdir=default_parts_path, title="Select Directory")
+    global default_parts_path, changed_parts_path
+    default_directory = default_parts_path
+    new_dir = filedialog.askdirectory(initialdir=default_directory, title="Select Directory")
     if new_dir:
         new_dir = new_dir.replace('/', '\\')  # 将路径中的斜杠替换为反斜杠
-        directory_label.config(text=f"PARTS Directory: {new_dir}")
+        default_directory = new_dir
+        directory_label.config(text=f"PARTS Directory: {default_directory}")
         changed_parts_path = new_dir
 
 def reset_to_default_directory():
     """将搜索路径重置为默认路径"""
-    global changed_parts_path
-    directory_label.config(text=f"Default PARTS Directory: {default_parts_path}")
+    global default_parts_path, changed_parts_path
+    default_directory = default_parts_path  # 重置为默认路径
+    directory_label.config(text=f"Default PARTS Directory: {default_directory}")
     changed_parts_path = None
 
 def open_file(event=None, file_path=None):
@@ -296,7 +294,7 @@ def build_directory_cache_thread(search_directory):
     thread.name = f"cache_thread_{search_directory}"
     
     # 缓存开始，更改cache_label的颜色
-    root.after(0, lambda: cache_label.config(foreground="red"))
+    root.after(0, lambda: cache_label.config(fg="red"))
 
     try:
         files_info = []
@@ -343,7 +341,7 @@ def get_cache_str():
         # 没有正在缓存的目录
         if not cached_dir:
             # 没有已缓存的目录
-            return f"No cache"
+            return f"Cache status"
         else:
             # 有已缓存的目录
             return f"Cache completed: [{', '.join(cached_dir)}]"
@@ -363,13 +361,14 @@ def show_cache_status():
 
     # 如果点击了重置按钮，直接改为灰色
     if stop_event.is_set():
-        root.after(0, lambda: cache_label.config(foreground="lightgray"))
+        root.after(0, lambda: cache_label.config(fg="lightgray"))
         return
     
     if not caching_list:
-        root.after(0, lambda: cache_label.config(foreground="lime"))
+        root.after(0, lambda: cache_label.config(fg="lime"))
     else:
-        root.after(0, lambda: cache_label.config(foreground="red"))
+        root.after(0, lambda: cache_label.config(fg="red"))
+
 
 def get_cached_directory(search_directory):
     """
@@ -383,12 +382,6 @@ def get_cached_directory(search_directory):
 
 def search_pdf_files(is_feeling_lucky=False):
     """搜索目录下的 PDF 文件"""
-    entry.focus()  # 保持焦点在输入框
-
-    # 检查进程是否存在，防止频繁搜索
-    if any("search_pdf_files_thread" in t.name for t in active_threads):
-        return
-    
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
@@ -525,7 +518,6 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
 
 def search_3d_files():
     """搜索目录下的 3D 文件(ipt或者iam)"""
-    entry.focus()  # 保持焦点在输入框
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
@@ -652,7 +644,6 @@ def search_3d_files_thread(query, search_directory):
 
 def search_vault_cache():
     """搜索Vault缓存目录下的 3D 文件(ipt或者iam)"""
-    entry.focus()  # 保持焦点在输入框
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
@@ -946,16 +937,16 @@ def ask_user_to_select_directory(directories):
 
     # 主容器
     frame = tk.Frame(choice_win)
-    frame.pack(fill=tk.BOTH, expand=True, padx=(int(15*sf), int(5*sf)), pady=int(10*sf))
+    frame.pack(fill=tk.BOTH, expand=True, padx=int(15*sf), pady=int(10*sf))
 
     # 提示文本
-    label = ttk.Label(frame, text="Multiple projects were found, please select:", font=("Segoe UI", 9), anchor="w")
+    label = tk.Label(frame, text="Multiple projects were found, please select:", anchor="w")
     label.pack(fill=tk.X)
 
     # 目录列表框
     list_frame = tk.Frame(frame)
     list_frame.pack(fill=tk.BOTH, expand=True, pady=int(5*sf))
-    listbox = tk.Listbox(list_frame, width=20, height=6, font=("Segoe UI", 9))
+    listbox = tk.Listbox(list_frame, width=20, height=6)
     listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=int(5*sf))
 
     # 创建Scrollbar并将其与Listbox关联
@@ -968,7 +959,7 @@ def ask_user_to_select_directory(directories):
         display_name = os.path.basename(path)  # 只显示目录名
         if display_name.lower().startswith("s") and not display_name.lower().startswith("stk"):
             display_name = display_name[1:]
-        listbox.insert(tk.END, f" {display_name}")  # 每行最前面留了一个空格，显示更好
+        listbox.insert(tk.END, f"{display_name}")
 
     for i in range(listbox.size()):
         if i % 2 == 0:
@@ -982,57 +973,16 @@ def ask_user_to_select_directory(directories):
     btn_frame = tk.Frame(frame)
     btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=int(15*sf), pady=int(3*sf))
 
-    cancel_btn = ttk.Button(btn_frame, text="Cancel", width=8, style="All.TButton", command=choice_win.destroy)
+    cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=choice_win.destroy)
     cancel_btn.pack(side=tk.RIGHT, padx=0)
 
-    select_btn = ttk.Button(btn_frame, text="Select Project", width=12, style="All.TButton", command=on_select)
+    select_btn = tk.Button(btn_frame, text="Select Project", width=12, command=on_select)
     select_btn.pack(side=tk.RIGHT, padx=int(15*sf))
     select_btn.config(state=tk.DISABLED) # 默认禁用选择按钮
 
     # 等待窗口关闭
     choice_win.wait_window()
     return selected_dir[0]
-
-def close_result_list():
-    """移除搜索结果"""
-    global result_frame, results_tree, window_expanded
-    if result_frame:
-        result_frame.destroy()
-        result_frame = None
-        results_tree = None
-        # 取反窗口扩展标志位，通过toggle_window_size()保持当前状态
-        window_expanded = not window_expanded
-        toggle_window_size()
-
-
-def sort_treeview(col, columns):
-    # 排序函数
-    global results_tree
-    # 获取 Treeview 中的所有数据
-    data_list = [(results_tree.item(item, "values"), item) for item in results_tree.get_children("")]
-    
-    # 按照指定列进行排序
-    col_index = columns.index(col)  # 获取列索引
-    # 读取当前列的排序状态
-    reverse = results_tree.sort_states[col]
-    sorted_data = sorted(data_list, key=lambda x: x[0][col_index], reverse=reverse)
-
-    # 删除原数据
-    for item in results_tree.get_children(""):
-        results_tree.delete(item)
-
-    # 重新插入排序后的数据
-    for values, item in sorted_data:
-        results_tree.insert("", tk.END, values=values)
-
-    # 切换排序状态
-    results_tree.sort_states[col] = not reverse
-
-    # 更新表头箭头
-    arrow = "  ▲" if not reverse else "  ▼"
-    for c in columns:
-        results_tree.heading(c, text=c)  # 先重置所有表头
-    results_tree.heading(col, text=col + arrow, command=lambda: sort_treeview(col, columns))
 
 def show_result_list(result_files):
     """显示搜索结果"""
@@ -1055,30 +1005,21 @@ def show_result_list(result_files):
         result_frame.destroy()
     result_frame = tk.Frame(root)
     result_frame.pack(fill=tk.BOTH, expand=True, pady=0)
-    tip_frame = tk.Frame(result_frame)
-    tip_frame.pack(padx=0, pady=0, fill="x")
-    # 搜索结果数量
-    tip_label = ttk.Label(tip_frame, text=msg, font=("Segoe UI", 9), foreground="blue")
-    tip_label.pack(padx=int(20*sf), pady=0, side=tk.LEFT)
-    # 显示一个关闭按钮用来移除搜索结果
-    close_btn = ttk.Button(tip_frame, text="❌", style="Close.TButton", width=3, command=close_result_list)
-    close_btn.pack(padx=int(16*sf), pady=0, side=tk.RIGHT)
-    Tooltip(close_btn, lambda: "Remove search results list", delay=500)
+    tip_label = tk.Label(result_frame, text=msg, fg="blue")
+    tip_label.pack(padx=int(20*sf), pady=0, anchor="w")
 
     # 设置 Treeview 表头和行样式
     style = ttk.Style()
-    style.configure("Treeview.Heading", padding=(0, int(4*sf)), background="#A9A9A9", foreground="black", font=("Segoe UI", 9, "bold"))
-    style.configure("Treeview", font=("Segoe UI", 9), rowheight=int(25*sf))
+    style.configure("Treeview.Heading", padding=(0, int(4*sf)), background="#A9A9A9", foreground="black", font=("Arial", 10, "bold"))
+    style.configure("Treeview", rowheight=int(25*sf))
     style.map("Treeview", background=[('selected', '#347083')])
 
     # 添加 Treeview 控件显示结果
     columns = ("File Name", "Created Time", "Path")
     results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
     results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
-    # 在 results_tree 上存储排序状态
-    results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
-    for col in columns:
-        results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
+    results_tree.heading("File Name", text="File Name", anchor="w")
+    results_tree.heading("Created Time", text="Created Time", anchor="w")
     results_tree.column("File Name", width=150, anchor="w")
     results_tree.column("Created Time", width=135, anchor="w")
     results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列
@@ -1109,15 +1050,15 @@ def show_result_list(result_files):
 
 def show_about():
     """自定义关于信息的窗口"""
-    entry.focus()  # 保持焦点在输入框
-    if hasattr(root, 'about_win') and root.about_win.winfo_exists():
-        # 如果窗口已经打开，就返回
-        root.about_win.lift()  # 如果存在，提升窗口到最前
-        return
+    global about_window_open
+
+    if about_window_open:
+        return  # 如果窗口已经打开，则直接返回
+
+    about_window_open = True  # 设置标志位，表示窗口已经打开
 
     # 创建自定义关于窗口
     about_win = tk.Toplevel(root)
-    root.about_win = about_win  # 将窗口绑定到 root 的属性上
     about_win.withdraw()  # 先隐藏窗口
     about_win.attributes("-topmost", True)
     about_win.title("About")
@@ -1128,8 +1069,9 @@ def show_about():
 
     # 窗口关闭时重置标志位
     def on_close():
-        del root.about_win  # 删除引用
-        about_win.destroy()  
+        global about_window_open
+        about_window_open = False
+        about_win.destroy()
 
     about_win.protocol("WM_DELETE_WINDOW", on_close)
 
@@ -1157,7 +1099,7 @@ def show_about():
         img = Image.open(io.BytesIO(icon_data))
         img = img.resize((int(64*sf), int(64*sf)), Image.Resampling.LANCZOS)  # 调整图标尺寸
         tk_img = ImageTk.PhotoImage(img)
-        icon_label = ttk.Label(icon_frame, image=tk_img)
+        icon_label = tk.Label(icon_frame, image=tk_img)
         icon_label.image = tk_img  # 保持引用
         icon_label.pack(pady=int(30*sf))
     except Exception as e:
@@ -1180,25 +1122,23 @@ def show_about():
     # 文本标签
     for i, text in enumerate(about_text):
         if i == 0:
-            label = ttk.Label(text_frame, text=text, font=("Segoe UI", 10, "bold"), anchor="w")
+            label = tk.Label(text_frame, text=text, font=("Arial", 10, "bold"), anchor="w")
         else:
-            label = ttk.Label(text_frame, text=text, font=("Segoe UI", 9), anchor="w")
+            label = tk.Label(text_frame, text=text, anchor="w")
         label.pack(anchor="w", fill=tk.X)
 
     # 邮箱按钮和地址
     email_frame = tk.Frame(text_frame)
     email_frame.pack(anchor="w")
 
-    email_label = ttk.Label(email_frame, text="Email me", foreground="blue", cursor="hand2", font=("Segoe UI", 9, "underline"))
+    email_label = tk.Label(email_frame, text="Email me", fg="blue", cursor="hand2", font=("Arial", 9, "underline"))
     email_label.pack(side=tk.LEFT, padx=0)
     email_label.bind("<Button-1>", lambda event: send_email())
 
-    email_label = ttk.Label(email_frame, text=": wtweitang@hotmail.com", font=("Segoe UI", 9))
+    email_label = tk.Label(email_frame, text=": wtweitang@hotmail.com")
     email_label.pack(side=tk.LEFT)
 
-    # 设置OK按钮的样式，主要想增加按钮高度，以便于不移动鼠标即可点击按钮关闭窗口
-    style.configure("AboutOK.TButton", font=("Segoe UI", 9), padding=(5, 5))
-    ok_button = ttk.Button(about_win, text="OK", style="AboutOK.TButton", command=on_close)
+    ok_button = tk.Button(about_win, text="OK", width=12, command=on_close)
     ok_button.pack(padx=int(15*sf), pady=int(15*sf), side=tk.RIGHT)
 
 def send_email():
@@ -1211,9 +1151,7 @@ def send_email():
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame
-
-    entry.focus()  # 保持焦点在输入框
+    global result_frame, results_tree, history_listbox, window_expanded, shortcut_frame, directory_cache
 
     # 触发停止事件
     stop_event.set()
@@ -1232,7 +1170,7 @@ def reset_window():
     directory_cache.clear()
 
     # 重置cache label颜色
-    cache_label.config(foreground="lightgray")
+    cache_label.config(fg="lightgray")
     
     entry.delete(0, tk.END)  # 清空输入框
     hide_warning_message()  # 清除警告信息
@@ -1250,8 +1188,11 @@ def reset_window():
             shortcut_frame = None
 
 def feeling_lucky():
-    """执行feeling lucky搜索"""
-    search_pdf_files(is_feeling_lucky=True)
+    """设置标志位并执行搜索"""
+    global feeling_lucky_pressed
+    feeling_lucky_pressed = True
+    search_pdf_files(feeling_lucky_pressed)
+    feeling_lucky_pressed = False
 
 def get_latest_file(prefix_name, directory):
     """查找并返回给定目录中最新修改的 Excel 文件的绝对路径"""
@@ -1275,8 +1216,6 @@ def get_latest_file(prefix_name, directory):
 def toggle_window_size():
     """切换窗口大小和按钮文本，并动态显示快捷访问按钮"""
     global window_expanded, shortcut_frame, result_frame
-
-    entry.focus()  # 保持焦点在输入框
     if window_expanded:
         # 如果已有搜索结果，保持显示搜索结果
         if result_frame:
@@ -1299,21 +1238,16 @@ def toggle_window_size():
             root.geometry(f"{expand_window_width}x{window_height}")  # 扩展窗口大小
         expand_btn.config(text="Quick Access   ❮❮")  # 改为 "❮❮"
 
-        # 先清空快捷按钮框架，防止从 mini 窗口切换回来时重复生成
-        if shortcut_frame:
-            shortcut_frame.destroy()
-            shortcut_frame = None
-
         # 创建快捷按钮框架
-        shortcut_frame = tk.Frame(root)
-        shortcut_frame.place(x=int(340*sf), y=int(43*sf), width=int(200*sf), height=int(210*sf))  # 定位到右侧扩展区域
+        if not shortcut_frame:
+            shortcut_frame = tk.Frame(root)
+            shortcut_frame.place(x=int(340*sf), y=int(43*sf), width=int(200*sf), height=int(230*sf))  # 定位到右侧扩展区域
 
         for i, shortcut in enumerate(shortcut_paths):
-            btn = ttk.Button(
+            btn = tk.Button(
                 shortcut_frame, 
                 text=shortcut["label"],
-                width=100,
-                style="All.TButton",
+                width=100, 
                 command=lambda i=i: open_shortcut(i)
             )
             btn.pack(padx=int(10*sf), pady=int(5*sf), anchor="w")
@@ -1372,22 +1306,12 @@ def open_mini_window():
     # 隐藏主窗口
     root.withdraw()
     
-    def on_close():
-        # 关闭 mini 窗口时，获取当前的位置，用于主窗口显示
-        global window_expanded
-        # 获取当前主窗口是否扩展的状态
-        expanded_status = window_expanded
-        new_position_left = int(mini_win.winfo_x() - root.winfo_width()/2 + mini_win_width/2)
-        new_position_top = mini_win.winfo_y()
-        mini_win.destroy()
-        show_window(new_position_left, new_position_top, expanded_status)
-
     # 创建 mini 窗口
     mini_win = tk.Toplevel(root)
     mini_win.withdraw()  # 先隐藏窗口
     mini_win.title("Drawing Search")
-    mini_win_width = int(230*sf)
-    mini_win_height = int(35*sf)
+    mini_win_width = int(255*sf)
+    mini_win_height = int(40*sf)
     mini_win.geometry(f"{mini_win_width}x{mini_win_height}")
     mini_win.attributes("-topmost", True) # 窗口置顶
     mini_win.attributes('-alpha', 0.6)  # 设置窗口透明度
@@ -1395,31 +1319,33 @@ def open_mini_window():
 
     # 设置窗口图标（复用主窗口图标）
     mini_win.iconphoto(True, icon)
+
     # 窗口位置，跟随主窗口居中显示
     mini_win.update_idletasks()
-    position_left = int(root.winfo_x() + root.winfo_width()/2 - mini_win_width/2)
-    position_top = root.winfo_y()
-    mini_win.geometry(f"+{position_left}+{position_top}")
+    position_right = int(root.winfo_x() + root.winfo_width()/2 - mini_win_width/2)
+    position_down = int(root.winfo_y() + mini_win_height)
+    mini_win.geometry(f"+{position_right}+{position_down}")
     mini_win.deiconify() # 显示mini窗口
-    root.winfo_width()/2 - mini_win_width/2
+    
     # 创建 mini 窗口的框架
     mini_frame = tk.Frame(mini_win)
     mini_frame.pack(pady=int(5*sf))
 
     # 在框架中添加一个输入框
-    mini_entry = ttk.Entry(mini_frame, font=("Segoe UI", 12), width=13)
+    mini_entry = tk.Entry(mini_frame, font=("Arial", 14), width=13)
     mini_entry.pack(side="left", pady=0, padx=int(5*sf))
     mini_entry.focus()
-
+    
     # 定义 mini 窗口的搜索操作
     def on_search_mini(event=None):
-        mini_entry.focus() # 焦点回位到输入框
         query = mini_entry.get().strip()
         if query:
             # 将 mini 窗口输入内容传递到主窗口的输入框
             entry.delete(0, tk.END)
             entry.insert(0, query)
-            on_close() # 关闭 mini 窗口，显示主窗口
+            # 销毁 mini 窗口，并显示主窗口
+            mini_win.destroy()
+            root.deiconify()
             # 调用搜索pdf函数
             search_pdf_files()
     
@@ -1427,23 +1353,13 @@ def open_mini_window():
     mini_entry.bind("<Return>", on_search_mini)
     
     # 添加搜索按钮
-    search_btn_mini = ttk.Button(mini_frame, text="Search", width=10, style="All.TButton", command=on_search_mini)
+    search_btn_mini = tk.Button(mini_frame, text="Search", width=8, command=on_search_mini)
     search_btn_mini.pack(side="right", padx=int(5*sf))
 
     # 如果用户直接关闭 mini 窗口，则重新显示主窗口
-    mini_win.protocol("WM_DELETE_WINDOW", on_close)
+    mini_win.protocol("WM_DELETE_WINDOW", lambda: (mini_win.destroy(), show_window()))
 
-def show_window(new_position_left, new_position_top, expanded_status):
-    # 根据新位置显示主窗口
-    global window_expanded
-    root.geometry(f"{window_width}x{window_height}+{new_position_left}+{new_position_top}")
-    # 如果主窗口隐藏前是扩展状态，恢复到扩展状态，并恢复搜索结果的显示（如果有） 
-    if expanded_status:
-        window_expanded = False
-        toggle_window_size()
-    else:
-        window_expanded = True
-        toggle_window_size()
+def show_window():
     root.deiconify()  # 显示窗口
     entry.focus_set()  # 设置焦点到输入框
 
@@ -1490,67 +1406,32 @@ try:
     label_frame.pack(pady=(int(15*sf), int(5*sf)), anchor="w", fill="x")
 
     # 标签放在第一行
-    prompt_label = ttk.Label(label_frame, text="Input Part / Assembly / Project Number :", font=("Segoe UI", 9), anchor="w")
+    prompt_label = tk.Label(label_frame, text="Input Part / Assembly / Project Number :", anchor="w")
     prompt_label.pack(side=tk.LEFT, padx=(int(20*sf), 0))
 
-    # 创建ttk控件的 Style
-    style = ttk.Style()
-    style.configure("Top.TCheckbutton", font=("Segoe UI", 10)) 
-    style.configure("Warning.TLabel", font=("Segoe UI", 9), foreground="red")
-    style.configure("All.TButton", font=("Segoe UI", 9))
-    style.configure("Close.TButton", font=("Segoe UI", 7))
-    style.map("Close.TButton", foreground=[("active", "red"), ("!active", "black")])  # 搜索结果列表的关闭按钮，鼠标悬停变红
-    style.configure("Change.TLabel", font=("Segoe UI", 8, "underline"), foreground="blue")
-    style.configure("About.TLabel", font=("Segoe UI", 12, "bold"))
-    style.configure("Cache.TLabel", font=("Segoe UI", 9), foreground="lightgray")
-    style.configure("Tooltip.TLabel", background="#ffffe0")
-
     # 添加置顶选项
+    # 创建复选框的 Style
+    style = ttk.Style()
+    style.configure("Custom.TCheckbutton", font=("Arial", 13))  # 设置字体大小
+
     # 创建一个 IntVar 绑定复选框的状态（0 未选中，1 选中）
     topmost_var = tk.IntVar()
 
     # 创建复选框，用于控制窗口置顶
-    checkbox = ttk.Checkbutton(label_frame, text="📌", variable=topmost_var, style="Top.TCheckbutton", command=toggle_topmost)
+    checkbox = ttk.Checkbutton(label_frame, text="📌", variable=topmost_var, style="Custom.TCheckbutton", command=toggle_topmost)
     checkbox.pack(side=tk.RIGHT, padx=int(10*sf))
     Tooltip(checkbox, lambda: "Pin to top", delay=500)
 
     # 添加切换mini窗口的按钮
-    mini_search_label = ttk.Label(label_frame, text="🍀", font=("Segoe UI", 10), cursor="hand2")
+    mini_search_label = tk.Label(label_frame, text="🍀", font=("Arial", 13), cursor="hand2")
     mini_search_label.pack(side=tk.RIGHT, padx=int(5*sf))
     mini_search_label.bind("<Button-1>", lambda event: open_mini_window())
     Tooltip(mini_search_label, lambda: "Switch to mini window", delay=500)
 
-     # 按钮宽度，输入框宽度，Label宽度和位置，无法根据缩放比例在布局内进行同比例调整，所以指定具体值
-    if ScaleFactor == 100:
-        btn_width = 21
-        entry_width = 27
-        parts_dir_width = 33
-        parts_y_position = int(5*sf-3)
-    elif ScaleFactor == 125:
-        btn_width = 20
-        entry_width = 25
-        parts_dir_width = 36
-        parts_y_position = int(5*sf)
-    elif ScaleFactor == 150:
-        btn_width = 19
-        entry_width = 26
-        parts_dir_width = 35
-        parts_y_position = int(5*sf+4)
-    elif ScaleFactor == 175:
-        btn_width = 21
-        entry_width = 26
-        parts_dir_width = 36
-        parts_y_position = int(5*sf+10)
-    else:
-        btn_width = 20
-        entry_width = 25
-        parts_dir_width = 35
-        parts_y_position = int(5*sf)
-
     # 创建输入框框架
     entry_frame = tk.Frame(root)
     entry_frame.pack(pady=0, anchor="w", fill="x")
-    entry = ttk.Entry(entry_frame, width=entry_width, font=("Segoe UI", 16))
+    entry = tk.Entry(entry_frame, width=25, font=("Arial", 16))
     entry.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
     create_entry_context_menu(entry)
     entry.focus()
@@ -1558,7 +1439,7 @@ try:
     entry.bind("<Button-1>", show_search_history)  # 点击输入框时显示历史记录
     entry.bind("<KeyRelease>", show_search_history)  # 输入时实时更新匹配历史
     # 用于显示警告信息的标签
-    warning_label = ttk.Label(entry_frame, text="", style="Warning.TLabel", anchor="w")
+    warning_label = tk.Label(entry_frame, text="", font=("Arial", 9), fg="red", anchor="w")
     warning_label.pack(fill="x", padx=int(20*sf))
 
     # 用户点击非 Listbox 或 Entry 区域时销毁 Listbox
@@ -1568,66 +1449,77 @@ try:
     button_frame = tk.Frame(root)
     button_frame.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
 
+    # 按钮宽度无法根据缩放比例在布局内进行同比例调整，所以指定宽度
+    btn_width = 20
+    if ScaleFactor == 100:
+        btn_width = 18
+    elif ScaleFactor in [125, 150]:
+        btn_width = 20
+    elif ScaleFactor == 175:
+        btn_width = 19
+    else:
+        btn_width = 20
+
     # Search PDF 按钮
-    search_btn = ttk.Button(button_frame, text="Search PDF Drawing", width=btn_width, style="All.TButton", command=search_pdf_files)
+    search_btn = tk.Button(button_frame, text="Search PDF Drawing", width=btn_width, command=search_pdf_files)
     search_btn.grid(row=0, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(search_btn, lambda: "Search for PDF files matching the entered keywords", delay=500)
 
     # I'm Feeling Lucky 按钮
-    lucky_btn = ttk.Button(button_frame, text="I'm Feeling Lucky!", style="All.TButton", width=btn_width, command=feeling_lucky)
+    lucky_btn = tk.Button(button_frame, text="I'm Feeling Lucky!", width=btn_width, command=feeling_lucky)
     lucky_btn.grid(row=0, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(lucky_btn, lambda: "Open the latest revision of the PDF drawing", delay=500)
 
     # Search 3D drawing 按钮
-    search_3d_btn = ttk.Button(button_frame, text="Search 3D Drawing", style="All.TButton", width=btn_width, command=search_3d_files)
+    search_3d_btn = tk.Button(button_frame, text="Search 3D Drawing", width=btn_width, command=search_3d_files)
     search_3d_btn.grid(row=1, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(search_3d_btn, lambda: "Search for 3D files (.iam/.ipt) matching the entered keywords", delay=500)
 
     # Search vault cache 按钮
-    search_cache_btn = ttk.Button(button_frame, text="Search in Vault Cache", style="All.TButton", width=btn_width, command=search_vault_cache)
+    search_cache_btn = tk.Button(button_frame, text="Search in Vault Cache", width=btn_width, command=search_vault_cache)
     search_cache_btn.grid(row=1, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(search_cache_btn, lambda: "Search 3D drawings (.iam/.ipt) from local Vault cache\rSupport searching by project name", delay=500)
 
     # Reset 按钮
-    reset_btn = ttk.Button(button_frame, text="Reset", width=btn_width, style="All.TButton", command=reset_window)
+    reset_btn = tk.Button(button_frame, text="Reset", width=btn_width, command=reset_window)
     reset_btn.grid(row=2, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(reset_btn, lambda: "Reset the window to default, stop the current search\rand clear search cache", delay=500)
 
     # 扩展按钮
-    expand_btn = ttk.Button(button_frame, text="Quick Access   ❯❯", width=btn_width, style="All.TButton", command=toggle_window_size)
+    expand_btn = tk.Button(button_frame, text="Quick Access   ❯❯", width=btn_width, command=toggle_window_size)
     expand_btn.grid(row=2, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(expand_btn, lambda: "Shortcuts to frequently used folders and files", delay=500)
 
     # 显示默认目录及更改功能
     directory_frame = tk.Frame(root)
-    directory_frame.pack(anchor="w", padx=int(20*sf), pady=parts_y_position, fill="x")
-    directory_label = ttk.Label(directory_frame, text=f"Default PARTS Directory: {default_parts_path}", font=("Segoe UI", 8), width=parts_dir_width, anchor="w")
+    directory_frame.pack(anchor="w", padx=int(20*sf), pady=int(5*sf), fill="x")
+    directory_label = tk.Label(directory_frame, text=f"Default PARTS Directory: {default_parts_path}", font=("Arial", 8), width=34, anchor="w")
     directory_label.pack(side=tk.LEFT)
     Tooltip(directory_label, lambda: directory_label.cget("text"), delay=500)
 
     # Change 按钮
-    change_label = ttk.Label(directory_frame, text="Change", style="Change.TLabel", cursor="hand2")
-    change_label.pack(side=tk.LEFT, padx=int(8*sf))
+    change_label = tk.Label(directory_frame, text="Change", fg="blue", cursor="hand2", font=("Arial", 8, "underline"))
+    change_label.pack(side=tk.LEFT, padx=int(3*sf))
     Tooltip(change_label,  lambda: "Select a new PARTS directory", delay=500)
     change_label.bind("<Button-1>", lambda event: update_directory())
 
     # Default 按钮
-    default_label = ttk.Label(directory_frame, text="Default", style="Change.TLabel", cursor="hand2")
+    default_label = tk.Label(directory_frame, text="Default", fg="blue", cursor="hand2", font=("Arial", 8, "underline"))
     default_label.pack(side=tk.LEFT, padx=0)
     Tooltip(default_label,  lambda: "Reset the PARTS directory to default", delay=500)
     default_label.bind("<Button-1>", lambda event: reset_to_default_directory())
 
     # About 按钮
-    about_frame = ttk.Frame(root)
+    about_frame = tk.Frame(root)
     about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
-    about_label = ttk.Label(about_frame, text="ⓘ", style="About.TLabel", cursor="hand2")
-    about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(8*sf)))
+    about_label = tk.Label(about_frame, text="ⓘ", fg="black", cursor="hand2", font=("Arial Unicode MS", 13, "bold"))
+    about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=int(8*sf))
     Tooltip(about_label,  lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
 
     # 显示缓存状态, 灰色无缓存，绿色缓存已完成，红色正在缓存
-    cache_label = ttk.Label(about_frame, text="●", style="Cache.TLabel")
-    cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
+    cache_label = tk.Label(about_frame, text="●", fg="lightgray")
+    cache_label.pack(side=tk.RIGHT, padx=0, pady=int(8*sf))
     tooltip_instance = Tooltip(cache_label, get_cache_str, delay=500)
 
     # 运行主循环
