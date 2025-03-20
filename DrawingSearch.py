@@ -381,12 +381,12 @@ def get_cached_directory(search_directory):
         return directory_cache[search_directory]
     return None
 
-def search_pdf_files(is_feeling_lucky=False):
-    """搜索目录下的 PDF 文件"""
+def search_files(search_type=None):
+    """根据不同搜索类型，搜索PARTS目录下的文件"""
     entry.focus()  # 保持焦点在输入框
 
     # 检查进程是否存在，防止频繁搜索
-    if any("search_pdf_files_thread" in t.name for t in active_threads):
+    if any("search_files_thread" in t.name for t in active_threads):
         return
     
     disable_search_button() # 禁用搜索按钮
@@ -430,11 +430,11 @@ def search_pdf_files(is_feeling_lucky=False):
             query = query[:3] + '.*' + query[3:]
 
     stop_event.clear()  # 确保上一次的停止信号被清除
-    search_thread = threading.Thread(target=search_pdf_files_thread, args=(query, search_directory, is_feeling_lucky))
+    search_thread = threading.Thread(target=search_files_thread, args=(query, search_directory, search_type))
     search_thread.start()
 
-def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
-    """使用多线程搜索目录下的 PDF 文件"""
+def search_files_thread(query, search_directory, search_type):
+    """使用多线程搜索目录下的文件"""
     global active_threads, directory_cache
 
     # 获取当前线程并添加到活动线程集合中
@@ -450,7 +450,8 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
             query = query.lower()
             match_func = lambda file: query in file.lower()
                 
-        result_files = []
+        result_files_pdf = []
+        result_files_3d = []
         # 从缓存中取出所有文件信息
         all_files = get_cached_directory(search_directory)
         if all_files is None:
@@ -474,10 +475,15 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
                         root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
                         i = 0
                     i += 1
+                    # 根据不同文件类型，存储到不同list里
                     if file.endswith(".pdf") and match_func(file):
                         file_path = os.path.join(root_dir, file)
                         create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                        result_files.append((file, create_time, file_path))  # (文件名, 创建时间, 文件路径)
+                        result_files_pdf.append((file, create_time, file_path))  # (文件名, 创建时间, 文件路径)
+                    elif (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
+                        file_path = os.path.join(root_dir, file)
+                        create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
+                        result_files_3d.append((file, create_time, file_path))  # (文件名, 创建时间, 文件路径)
 
         else:
             # 使用缓存中的文件信息
@@ -491,157 +497,44 @@ def search_pdf_files_thread(query, search_directory, is_feeling_lucky):
                     root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}", "red"))
                     i = 0
                 i += 1
+                # 根据不同文件类型，存储到不同list里
                 if file_name.endswith(".pdf") and match_func(file_name):
                     # 格式化创建时间
                     create_time = datetime.datetime.fromtimestamp(file_info[1]).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files.append((file_name, create_time, file_info[2]))  # (文件名, 创建时间, 文件路径)
-
-        if stop_event.is_set():  # 检查停止标志并返回
-            return
-        # 排序结果（按创建时间倒序）
-        result_files.sort(key=lambda x: x[1], reverse=True)
-
-        root.after(0, hide_warning_message)  # 使用主线程清除警告信息
-
-        # 如果没有搜索到匹配的文件，显示警告信息
-        if not result_files:
-            root.after(0, lambda: show_warning_message("No matching drawing PDF found!", "red"))
-        else:
-            if is_feeling_lucky:
-                # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
-                file_path = result_files[0][2]  # 复制file_path的值传给open_file，避免result_files被修改后值为空
-                root.after(0, lambda: open_file(file_path=file_path))
-                # result_files = [] # 清空搜索结果，不显示在界面上 (注释掉了，不清空，方便用户查看搜索结果)
-
-        # 显示搜索结果
-        root.after(0, lambda: show_result_list(result_files))
-        root.after(0, lambda: enable_search_button())  # 启用搜索按钮
-
-    except Exception as e:
-        root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
-
-    finally:
-        active_threads.discard(thread)  # 线程结束后移除
-
-def search_3d_files():
-    """搜索目录下的 3D 文件(ipt或者iam)"""
-    entry.focus()  # 保持焦点在输入框
-    disable_search_button() # 禁用搜索按钮
-    hide_warning_message()  # 清除警告信息
-    query = entry.get().strip() # 去除首尾空格
-    if not query:
-        show_warning_message("Please enter any number or project name!", "red")
-        enable_search_button() # 启用搜索按钮
-        return
-    
-    # 检查是否包含非法字符
-    if any(char in query for char in "*.?+^$[]{}|\\()"):
-        show_warning_message("Invalid characters in search query!", "red")
-        enable_search_button() # 启用搜索按钮
-        return
-
-    save_search_history(query)  # 保存搜索记录
-
-    # 提取前两位字符并更新搜索路径
-    prefix = query[:2]
-    if changed_parts_path:
-        search_directory = os.path.join(changed_parts_path, prefix)
-    else:
-        search_directory = os.path.join(default_parts_path, prefix)
-
-    if not os.path.exists(search_directory):
-        show_warning_message(f"Path does not exist! {search_directory}", "red")
-        show_result_list(None) # 目录不存在就清空已有搜索结果
-        enable_search_button() # 启用搜索按钮
-        return
-
-    # 执行搜索
-    show_warning_message(f"Searching... Please wait.", "red")
-    query = query.lower()
-    # 对STK的project number进行特殊处理
-    if query.startswith("stk") and len(query) > 3:
-        if query[3] == '-' or query[3] == ' ':
-            query = query[:3] + '.*' + query[4:]
-        else:
-            query = query[:3] + '.*' + query[3:]
-
-    stop_event.clear()  # 确保上一次的停止信号被清除
-    search_thread = threading.Thread(target=search_3d_files_thread, args=(query, search_directory,))
-    search_thread.start()
-
-def search_3d_files_thread(query, search_directory):
-    """使用多线程搜索目录下的 3D 文件"""
-    global active_threads, directory_cache
-
-    # 获取当前线程并添加到活动线程集合中
-    thread = threading.current_thread()
-    active_threads.add(thread)
-    
-    try:
-        if "*" in query or "." in query:
-            # 只有包含通配符才使用正则
-            regex_pattern = re.compile(query, re.IGNORECASE)
-            match_func = lambda file: regex_pattern.search(file)
-        else:
-            query = query.lower()
-            match_func = lambda file: query in file.lower()
-
-        result_files = []
-        # 从缓存中取出所有文件信息
-        all_files = get_cached_directory(search_directory)
-        if all_files is None:
-            # 如果缓存中没有该目录的记录，则在后台建立缓存
-            # 检查是否已经有当前搜索目录的缓存线程在运行
-            if not any(t.name == f"cache_thread_{search_directory}" for t in active_threads):
-                cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
-                cache_thread.name = f"cache_thread_{search_directory}"
-                cache_thread.start()
-
-            # 直接遍历目录下的文件，不使用缓存
-            i = 50
-            for root_dir, _, files in os.walk(search_directory):
-                if stop_event.is_set():  # 检查是否需要终止
-                    return
-                for file in files:
-                    if stop_event.is_set():  # 检查是否需要终止
-                        return
-                    # 每遍历50个文件，显示一次文件名，体现搜索过程
-                    if i == 50:
-                        root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
-                        i = 0
-                    i += 1
-                    if (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
-                        file_path = os.path.join(root_dir, file)
-                        create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                        result_files.append((file, create_time, file_path))  # (文件名, 创建时间, 文件路径)
-        else:
-            # 使用缓存中的文件信息
-            i = 50
-            for file_info in all_files:
-                if stop_event.is_set():  # 检查是否需要终止
-                    return
-                file_name = file_info[0]
-                # 每遍历50个文件，显示一次文件名，体现搜索过程
-                if i == 50:
-                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}", "red"))
-                    i = 0
-                i += 1
-                if (file_name.endswith(".iam") or file_name.endswith(".ipt")) and match_func(file_name):
+                    result_files_pdf.append((file_name, create_time, file_info[2]))  # (文件名, 创建时间, 文件路径)
+                elif (file_name.endswith(".iam") or file_name.endswith(".ipt")) and match_func(file_name):
                     # 格式化创建时间
                     create_time = datetime.datetime.fromtimestamp(file_info[1]).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files.append((file_name, create_time, file_info[2]))  # (文件名, 创建时间, 文件路径)
-
+                    result_files_3d.append((file_name, create_time, file_info[2]))  # (文件名, 创建时间, 文件路径)
 
         if stop_event.is_set():  # 检查停止标志并返回
             return
+        # pdf搜索结果排序（按创建时间倒序）
+        result_files_pdf.sort(key=lambda x: x[1], reverse=True)
+        # 3d文件搜索结果排序（按文件名排序）
+        result_files_3d.sort(key=lambda x: x[0])
+
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
 
-        if not result_files:
-            root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache.", "red"))
-
-        # 排序结果（按文件名排序）
-        result_files.sort(key=lambda x: x[0])
-        root.after(0, lambda: show_result_list(result_files))
+        if search_type == "pdf" or search_type == "lucky":
+            if not result_files_pdf:
+                # 如果没有搜索到匹配的文件，显示警告信息
+                root.after(0, lambda: show_warning_message("No matching drawing PDF found!", "red"))
+            else:
+                if search_type == "lucky":
+                    # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
+                    file_path = result_files_pdf[0][2]  # 复制file_path的值传给open_file，避免result_files被修改后值为空
+                    root.after(0, lambda: open_file(file_path=file_path))
+                    # result_files = [] # 清空搜索结果，不显示在界面上 (注释原因：不清空，方便用户查看搜索结果)
+            # 显示搜索结果
+            root.after(0, lambda: show_result_list(result_files_pdf))
+        if search_type == "3d":
+            if not result_files_3d:
+                # 如果没有搜索到匹配的文件，显示警告信息
+                root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache.", "red"))
+            # 显示搜索结果
+            root.after(0, lambda: show_result_list(result_files_3d))
+        
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
 
     except Exception as e:
@@ -649,6 +542,18 @@ def search_3d_files_thread(query, search_directory):
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
+
+def search_pdf_files():
+    """执行pdf搜索"""
+    search_files(search_type="pdf")
+
+def feeling_lucky():
+    """执行feeling lucky搜索"""
+    search_files(search_type="lucky")
+
+def search_3d_files():
+    """执行feeling lucky搜索"""
+    search_files(search_type="3d")
 
 def search_vault_cache():
     """搜索Vault缓存目录下的 3D 文件(ipt或者iam)"""
@@ -1248,10 +1153,6 @@ def reset_window():
         if shortcut_frame:
             shortcut_frame.destroy()
             shortcut_frame = None
-
-def feeling_lucky():
-    """执行feeling lucky搜索"""
-    search_pdf_files(is_feeling_lucky=True)
 
 def get_latest_file(prefix_name, directory):
     """查找并返回给定目录中最新修改的 Excel 文件的绝对路径"""
