@@ -21,11 +21,14 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.0"  # 版本号
+ver = "1.3.1"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
 results_tree = None  # 搜索结果的 Treeview 控件
+result_files_pdf = None  # 存储pdf搜索结果
+result_files_3d = None  # 存储3d文件iam和ipt搜索结果
+last_query = None  # 上一次的搜索结果
 history_listbox = None  # 用于显示搜索历史的列表框
 window_expanded = False  # 设置标志位，表示窗口是否已经扩展
 window_width = 345
@@ -169,18 +172,20 @@ def open_shortcut(index):
 
 def update_directory():
     """更新搜索目录"""
-    global changed_parts_path
+    global changed_parts_path, last_query
     new_dir = filedialog.askdirectory(initialdir=default_parts_path, title="Select Directory")
     if new_dir:
         new_dir = new_dir.replace('/', '\\')  # 将路径中的斜杠替换为反斜杠
         directory_label.config(text=f"PARTS Directory: {new_dir}")
         changed_parts_path = new_dir
-
+        last_query = None
+        
 def reset_to_default_directory():
     """将搜索路径重置为默认路径"""
-    global changed_parts_path
+    global changed_parts_path, last_query
     directory_label.config(text=f"Default PARTS Directory: {default_parts_path}")
     changed_parts_path = None
+    last_query = None
 
 def open_file(event=None, file_path=None):
     """用系统默认程序打开选中的文件"""
@@ -381,31 +386,34 @@ def get_cached_directory(search_directory):
         return directory_cache[search_directory]
     return None
 
-def search_files(search_type=None):
+def search_files(query, search_type=None):
     """根据不同搜索类型，搜索PARTS目录下的文件"""
-    entry.focus()  # 保持焦点在输入框
+    global last_query
 
     # 检查进程是否存在，防止频繁搜索
     if any("search_files_thread" in t.name for t in active_threads):
+        last_query = None
         return
     
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
-    query = entry.get().strip() # 去除首尾空格
+    
     
     if not query:
         show_warning_message("Please enter any number or project name!", "red")
         enable_search_button() # 启用搜索按钮
+        last_query = None
         return
 
     # 检查是否包含非法字符
     if any(char in query for char in "*.?+^$[]{}|\\()"):
         show_warning_message("Invalid characters in search query!", "red")
         enable_search_button() # 启用搜索按钮
+        last_query = None
         return
 
     save_search_history(query)  # 保存搜索记录
-
+    last_query = query
     # 提取前两位字符并更新搜索路径
     prefix = query[:2]
     if changed_parts_path:
@@ -417,6 +425,7 @@ def search_files(search_type=None):
         show_warning_message(f"Path does not exist! {search_directory}", "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
+        last_query = None
         return
 
     # 执行搜索
@@ -435,7 +444,7 @@ def search_files(search_type=None):
 
 def search_files_thread(query, search_directory, search_type):
     """使用多线程搜索目录下的文件"""
-    global active_threads, directory_cache
+    global active_threads, directory_cache, result_files_pdf, result_files_3d
 
     # 获取当前线程并添加到活动线程集合中
     thread = threading.current_thread()
@@ -545,18 +554,72 @@ def search_files_thread(query, search_directory, search_type):
 
 def search_pdf_files():
     """执行pdf搜索"""
-    search_files(search_type="pdf")
+    global last_query
+    entry.focus()  # 保持焦点在输入框
+    query = entry.get().strip() # 去除首尾空格
+    if query == last_query:
+        # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
+        if not result_files_pdf:
+            # 如果结果是空，显示警告信息，移除之前显示的搜索结果
+            show_warning_message("No matching drawing PDF found!", "red")
+            close_result_list()
+        else:
+            disable_search_button()
+            show_warning_message(f"Searching... Please wait.", "red")
+            # 后台执行show_result_list
+            root.after(10, lambda: (show_result_list(result_files_pdf), hide_warning_message(), enable_search_button()))
+    else:
+        # 如果搜索关键字跟上一次不一样，重新搜索
+        last_query = query
+        search_files(query, search_type="pdf")
 
 def feeling_lucky():
     """执行feeling lucky搜索"""
-    search_files(search_type="lucky")
+    global last_query
+    entry.focus()  # 保持焦点在输入框
+    query = entry.get().strip() # 去除首尾空格
+    if query == last_query:
+        # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
+        if not result_files_pdf:
+            # 如果结果是空，显示警告信息，移除之前显示的搜索结果
+            show_warning_message("No matching drawing PDF found!", "red")
+            close_result_list()
+        else:
+            disable_search_button()
+            show_warning_message(f"Searching... Please wait.", "red")
+            file_path = result_files_pdf[0][2]  # 复制排在第一个的file_path的值传给open_file
+            open_file(file_path=file_path)  # 打开第一个pdf文件
+            # 后台执行show_result_list
+            root.after(10, lambda: (show_result_list(result_files_pdf), hide_warning_message(), enable_search_button()))
+    else:
+        # 如果搜索关键字跟上一次不一样，重新搜索
+        last_query = query
+        search_files(query, search_type="lucky")
 
 def search_3d_files():
-    """执行feeling lucky搜索"""
-    search_files(search_type="3d")
+    """执行3d文件搜索"""
+    global last_query
+    entry.focus()  # 保持焦点在输入框
+    query = entry.get().strip() # 去除首尾空格
+    if query == last_query:
+        # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
+        if not result_files_3d:
+            # 如果结果是空，显示警告信息，移除之前显示的搜索结果
+            show_warning_message("No matching 3D drawing found! Try using Vault Cache.", "red")
+            close_result_list()
+        else:
+            disable_search_button()
+            show_warning_message(f"Searching... Please wait.", "red")
+            # 后台执行show_result_list
+            root.after(10, lambda: (show_result_list(result_files_3d), hide_warning_message(), enable_search_button()))
+    else:
+        # 如果搜索关键字跟上一次不一样，重新搜索
+        last_query = query
+        search_files(query, search_type="3d")
 
 def search_vault_cache():
     """搜索Vault缓存目录下的 3D 文件(ipt或者iam)"""
+    global last_query
     entry.focus()  # 保持焦点在输入框
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
@@ -577,6 +640,7 @@ def search_vault_cache():
     matching_directories = []
     search_directory = None
     real_query = None
+    last_query = None
 
     if not os.path.exists(vault_cache):
         # 如果Vault缓存目录不存在，提示用户使用Vault
@@ -902,9 +966,10 @@ def close_result_list():
     """移除搜索结果"""
     global result_frame, results_tree, window_expanded
     if result_frame:
+        results_tree.destroy()
+        results_tree = None
         result_frame.destroy()
         result_frame = None
-        results_tree = None
         # 取反窗口扩展标志位，通过toggle_window_size()保持当前状态
         window_expanded = not window_expanded
         toggle_window_size()
@@ -1116,7 +1181,7 @@ def send_email():
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query
 
     entry.focus()  # 保持焦点在输入框
 
@@ -1138,14 +1203,20 @@ def reset_window():
 
     # 重置cache label颜色
     cache_label.config(foreground="lightgray")
+
+    # 清除上次搜索关键字记录
+    last_query = None
     
     entry.delete(0, tk.END)  # 清空输入框
     hide_warning_message()  # 清除警告信息
     enable_search_button() # 启用搜索按钮
+
+    # 移除显示的搜索结果
     if result_frame:
+        results_tree.destroy()
+        results_tree = None
         result_frame.destroy()
         result_frame = None
-        results_tree = None
     root.geometry(f"{window_width}x{window_height}")  # 恢复初始窗口大小
     if window_expanded:
         expand_btn.config(text="Quick Access   ❯❯")  # 改为 "❯❯"
@@ -1283,6 +1354,18 @@ def open_mini_window():
         mini_win.destroy()
         show_window(new_position_left, new_position_top, expanded_status)
 
+    def clear_mini_entry(event=None):
+        # 清空输入框内容
+        mini_entry.delete(0, tk.END)  # 清空输入框内容
+        clear_label_mini.place_forget()  # 清空后，隐藏 X
+
+    def update_label_color_mini(event=None):
+        # 判断输入框内容是否为空
+        if mini_entry.get():
+            clear_label_mini.place(in_=mini_entry, relx=1.0, rely=0.5, anchor='e', x=int(-10*sf))  # 显示 X
+        else:
+            clear_label_mini.place_forget()  # 空内容时，隐藏 X`
+
     # 创建 mini 窗口
     mini_win = tk.Toplevel(root)
     mini_win.withdraw()  # 先隐藏窗口
@@ -1326,7 +1409,16 @@ def open_mini_window():
     
     # 绑定回车键
     mini_entry.bind("<Return>", on_search_mini)
-    
+
+    # 清除 mini Entry 内容的Label，初始不显示
+    clear_label_mini = ttk.Label(mini_entry, text="✕", font=('Segoe UI', 9), foreground='red', style="Clear.TLabel", cursor="arrow")
+    # 监听 mini Entry 内容变化来更新 Label 的颜色， 同时实时更新匹配历史
+    mini_entry.bind("<KeyRelease>", lambda event: (update_label_color_mini(event)))
+    mini_entry.bind("<FocusIn>", update_label_color_mini)     # 当 mini Entry 获取焦点时检查内容
+
+    # 绑定点击事件：点击 Label 的 X 就清空 Entry
+    clear_label_mini.bind("<Button-1>", clear_mini_entry)
+
     # 添加搜索按钮
     search_btn_mini = ttk.Button(mini_frame, text="Search", width=10, style="All.TButton", command=on_search_mini)
     search_btn_mini.pack(side="right", padx=int(5*sf))
@@ -1355,6 +1447,18 @@ def on_root_close():
     for thread in list(active_threads):
         thread.join(timeout=0.5)  # 最多等 0.5 秒
     root.destroy()  # 关闭窗口
+
+def clear_entry(event=None):
+    # 清空输入框内容
+    entry.delete(0, tk.END)  # 清空输入框内容
+    clear_label.place_forget()  # 清空后，隐藏 X
+
+def update_label_color(event=None):
+    # 判断输入框内容是否为空
+    if entry.get():
+        clear_label.place(in_=entry, relx=1.0, rely=0.5, anchor='e', x=int(-10*sf))  # 显示 X
+    else:
+        clear_label.place_forget()  # 空内容时，隐藏 X
 
 # 创建主窗口
 try:
@@ -1405,6 +1509,7 @@ try:
     style.configure("About.TLabel", font=("Segoe UI", 12, "bold"))
     style.configure("Cache.TLabel", font=("Segoe UI", 9), foreground="lightgray")
     style.configure("Tooltip.TLabel", background="#ffffe0")
+    style.configure("Clear.TLabel", background="white")
 
     # 添加置顶选项
     # 创建一个 IntVar 绑定复选框的状态（0 未选中，1 选中）
@@ -1457,7 +1562,16 @@ try:
     entry.focus()
     entry.bind("<Return>", lambda event: search_pdf_files())
     entry.bind("<Button-1>", show_search_history)  # 点击输入框时显示历史记录
-    entry.bind("<KeyRelease>", show_search_history)  # 输入时实时更新匹配历史
+
+    # 清除 Entry 内容的Label，初始不显示
+    clear_label = ttk.Label(entry_frame, text="✕", font=('Segoe UI', 10), foreground='red', style="Clear.TLabel", cursor="arrow")
+    # 监听 Entry 内容变化来更新 Label 的颜色， 同时实时更新匹配历史
+    entry.bind("<KeyRelease>", lambda event: (show_search_history(event), update_label_color(event)))
+    entry.bind("<FocusIn>", update_label_color)     # 当 Entry 获取焦点时检查内容
+
+    # 绑定点击事件：点击 Label 的 X 就清空 Entry
+    clear_label.bind("<Button-1>", clear_entry)
+
     # 用于显示警告信息的标签
     warning_label = ttk.Label(entry_frame, text="", style="Warning.TLabel", anchor="w")
     warning_label.pack(fill="x", padx=int(20*sf))
