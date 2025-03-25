@@ -8,6 +8,7 @@ import base64
 import glob
 import threading
 import ctypes
+import fitz  # PyMuPDF
 from tkinter import filedialog
 from tkinter import ttk
 from PIL import Image, ImageTk
@@ -21,7 +22,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.1"  # 版本号
+ver = "1.3.2"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -43,6 +44,7 @@ vault_cache = os.path.normpath("C:\\_Vault Working Folder\\Designs\\PARTS")  # V
 directory_cache = collections.OrderedDict()  # 使用 OrderedDict 维护缓存顺序
 cache_max_size = 10  # 设置缓存最大条目数，防止缓存过大
 cache_lock = threading.Lock()  # 用于保护缓存的线程锁
+thumbnail_win = None
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "Parts Folder", "path": "K:\\PARTS"},
@@ -536,7 +538,7 @@ def search_files_thread(query, search_directory, search_type):
                     root.after(0, lambda: open_file(file_path=file_path))
                     # result_files = [] # 清空搜索结果，不显示在界面上 (注释原因：不清空，方便用户查看搜索结果)
             # 显示搜索结果
-            root.after(0, lambda: show_result_list(result_files_pdf))
+            root.after(0, lambda: show_result_list(result_files_pdf, search_type))
         if search_type == "3d":
             if not result_files_3d:
                 # 如果没有搜索到匹配的文件，显示警告信息
@@ -567,7 +569,7 @@ def search_pdf_files():
             disable_search_button()
             show_warning_message(f"Searching... Please wait.", "red")
             # 后台执行show_result_list
-            root.after(10, lambda: (show_result_list(result_files_pdf), hide_warning_message(), enable_search_button()))
+            root.after(10, lambda: (show_result_list(result_files_pdf, search_type="pdf"), hide_warning_message(), enable_search_button()))
     else:
         # 如果搜索关键字跟上一次不一样，重新搜索
         last_query = query
@@ -590,7 +592,7 @@ def feeling_lucky():
             file_path = result_files_pdf[0][2]  # 复制排在第一个的file_path的值传给open_file
             open_file(file_path=file_path)  # 打开第一个pdf文件
             # 后台执行show_result_list
-            root.after(10, lambda: (show_result_list(result_files_pdf), hide_warning_message(), enable_search_button()))
+            root.after(10, lambda: (show_result_list(result_files_pdf, search_type="lucky"), hide_warning_message(), enable_search_button()))
     else:
         # 如果搜索关键字跟上一次不一样，重新搜索
         last_query = query
@@ -964,12 +966,13 @@ def ask_user_to_select_directory(directories):
 
 def close_result_list():
     """移除搜索结果"""
-    global result_frame, results_tree, window_expanded
+    global result_frame, results_tree, window_expanded, thumbnail_check
     if result_frame:
         results_tree.destroy()
         results_tree = None
         result_frame.destroy()
         result_frame = None
+        thumbnail_check.forget()
         # 取反窗口扩展标志位，通过toggle_window_size()保持当前状态
         window_expanded = not window_expanded
         toggle_window_size()
@@ -1004,12 +1007,17 @@ def sort_treeview(col, columns):
         results_tree.heading(c, text=c)  # 先重置所有表头
     results_tree.heading(col, text=col + arrow, command=lambda: sort_treeview(col, columns))
 
-def show_result_list(result_files):
+def show_result_list(result_files, search_type=None):
     """显示搜索结果"""
-    global result_frame, results_tree
+    global result_frame, results_tree, thumbnail_check
     if not result_files:
         if result_frame:
+            results_tree.destroy()
+            results_tree = None
             result_frame.destroy()
+            result_frame = None
+            if 'thumbnail_check' in globals() and thumbnail_check:
+                thumbnail_check.pack_forget()  # 如果没有搜索结果，隐藏 thumbnail_check
             if window_expanded:
                 root.geometry(f"{expand_window_width}x{window_height}")
             else:
@@ -1022,7 +1030,10 @@ def show_result_list(result_files):
 
     # 创建结果显示区域
     if result_frame:
+        results_tree.destroy()
+        results_tree = None
         result_frame.destroy()
+        result_frame = None
     result_frame = tk.Frame(root)
     result_frame.pack(fill=tk.BOTH, expand=True, pady=0)
     tip_frame = tk.Frame(result_frame)
@@ -1032,8 +1043,14 @@ def show_result_list(result_files):
     tip_label.pack(padx=int(20*sf), pady=0, side=tk.LEFT)
     # 显示一个关闭按钮用来移除搜索结果
     close_btn = ttk.Button(tip_frame, text="❌", style="Close.TButton", width=3, command=close_result_list)
-    close_btn.pack(padx=int(16*sf), pady=0, side=tk.RIGHT)
+    close_btn.pack(padx=(0, int(16*sf)), pady=0, side=tk.RIGHT)
     Tooltip(close_btn, lambda: "Remove search results list", delay=500)
+
+    # 如果是搜索pdf文件，就显示thumbnail_check按钮
+    if thumbnail_check and search_type in ("pdf", "lucky"):
+        thumbnail_check.pack(side=tk.LEFT, padx=int(20*sf))
+    else:
+        thumbnail_check.forget()
 
     # 设置 Treeview 表头和行样式
     style = ttk.Style()
@@ -1068,6 +1085,7 @@ def show_result_list(result_files):
     results_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     results_tree.bind("<Double-1>", open_file)
+    results_tree.bind("<<TreeviewSelect>>", on_tree_select)
 
     # 动态调整窗口大小以显示结果
     root.update_idletasks()
@@ -1076,6 +1094,110 @@ def show_result_list(result_files):
         root.geometry(f"{expand_window_width}x{min(new_height, int(540*sf))}")
     else:
         root.geometry(f"{window_width}x{min(new_height, int(540*sf))}")
+
+def get_pdf_page_orientation(pdf_path):
+    """获取 PDF 第一页的方向（横向 or 纵向）"""
+    try:
+        doc = fitz.open(pdf_path)
+        page = doc[0]  # 获取第一页
+        width, height = page.rect.width, page.rect.height
+        # 判断pdf是横向还是竖向
+        if width > height:
+            return "landscape", width, height
+        else:
+            return "portrait", height, width
+    except Exception as e:
+        show_warning_message(f"Unknown PDF orientation: {e}", "red")
+        return "landscape", width, height # 失败时默认横向
+
+def generate_pdf_thumbnail(pdf_path, thumbnail_size=(220, 170)):
+    """生成 PDF 文件的缩略图，220x170是根据letter纸张比例设置"""
+    try:
+        doc = fitz.open(pdf_path)
+        page = doc[0]  # 读取第一页
+        pix = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5))  # 缩小 50% 生成更小的图片
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        img.thumbnail(thumbnail_size)  # 生成缩略图
+        return ImageTk.PhotoImage(img)
+    except Exception as e:
+        show_warning_message(f"Unable to generate PDF thumbnail: {e}", "red")
+        return None
+
+def on_tree_select(event):
+    """当选中某个搜索结果时，如果是 PDF 文件，则在独立窗口显示缩略图"""
+    global thumbnail_win, results_tree, thumbnail_check, thumbnail_var
+
+    hide_warning_message()  # 清除警告信息
+    selected_item = results_tree.selection()
+    if not selected_item:
+        return
+    # 如果复选框存在且未勾选，直接返回，不显示缩略图
+    if 'thumbnail_check' in globals() and thumbnail_check and not thumbnail_var.get():
+        return
+    file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
+
+    if file_path.lower().endswith(".pdf"):
+        orientation, width, height = get_pdf_page_orientation(file_path)  # 判断 PDF 方向，获取长宽数据
+        # 缩略图缩小1/5
+        long_edge = int(width / 5 * sf)
+        short_edge = int(height / 5 *sf)
+        if orientation == "landscape":
+            thumbnail = generate_pdf_thumbnail(file_path, (long_edge, short_edge))
+        else:
+            thumbnail = generate_pdf_thumbnail(file_path, (short_edge, long_edge))
+        if thumbnail:
+            if thumbnail_win and thumbnail_win.winfo_exists():
+                thumbnail_win.destroy()  # 先销毁旧窗口
+
+            # 创建一个新的独立窗口
+            thumbnail_win = tk.Toplevel(root)
+            thumbnail_win.configure(bg="orange")
+            thumbnail_win.overrideredirect(True)
+            # 根据纸张方向设置窗口的大小
+            if orientation == "landscape":
+                thumbnail_win_width = long_edge + int(10*sf)
+                thumbnail_win_height = short_edge + int(10*sf)
+            else:
+                thumbnail_win_width = short_edge + int(10*sf)
+                thumbnail_win_height = long_edge + int(10*sf)
+            thumbnail_win.geometry(f"{thumbnail_win_width}x{thumbnail_win_height}")  # 设置窗口大小
+            thumbnail_win.resizable(False, False)
+
+            # 显示缩略图
+            label = ttk.Label(thumbnail_win, image=thumbnail, anchor="center")
+            label.pack(padx=int(5*sf), pady=int(5*sf))
+            label.image = thumbnail  # 保持引用，防止被垃圾回收
+
+            # 缩略图窗口出现主窗口左侧
+            x = root.winfo_x() - thumbnail_win_width +int(6*sf)
+            y = root.winfo_y() + window_height + int(48*sf)
+            thumbnail_win.geometry(f"+{x}+{y}")            
+    else:
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.destroy()  # 关闭缩略图窗口
+
+def on_main_window_move(event):
+    """当主窗口移动时，让 thumbnail_win 也随之移动"""
+    global thumbnail_win
+
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        # 计算新的位置
+        x = root.winfo_x() - thumbnail_win.winfo_width() + int(6 * sf)
+        y = root.winfo_y() + window_height + int(48 * sf)
+        thumbnail_win.geometry(f"+{x}+{y}")
+
+def on_main_window_click(event):
+    """当鼠标点击主窗口时，检查是否需要关闭缩略图窗口"""
+    global thumbnail_win, results_tree
+
+    # 获取事件发生的控件
+    widget = event.widget
+
+    # 如果 `thumbnail_win` 存在且点击的控件不是 `results_tree`，则关闭缩略图
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        if widget != results_tree:
+            thumbnail_win.destroy()
+            thumbnail_win = None
 
 def show_about():
     """自定义关于信息的窗口"""
@@ -1203,6 +1325,9 @@ def reset_window():
 
     # 重置cache label颜色
     cache_label.config(foreground="lightgray")
+
+    # 隐藏 thumbnail_check
+    thumbnail_check.forget()
 
     # 清除上次搜索关键字记录
     last_query = None
@@ -1479,6 +1604,8 @@ try:
     # 设置窗口图标
     root.iconphoto(True, icon)
     root.title("Drawing Search")
+    root.bind("<Configure>", on_main_window_move)
+    root.bind_all("<Button-1>", on_main_window_click)
     # 根据系统缩放比例调整窗口大小
     window_width = int(window_width*sf)
     window_height = int(window_height*sf)
@@ -1510,6 +1637,7 @@ try:
     style.configure("Cache.TLabel", font=("Segoe UI", 9), foreground="lightgray")
     style.configure("Tooltip.TLabel", background="#ffffe0")
     style.configure("Clear.TLabel", background="white")
+    style.configure("Thumbnail.TCheckbutton", font=("Segoe UI", 9)) 
 
     # 添加置顶选项
     # 创建一个 IntVar 绑定复选框的状态（0 未选中，1 选中）
@@ -1575,6 +1703,7 @@ try:
     # 用于显示警告信息的标签
     warning_label = ttk.Label(entry_frame, text="", style="Warning.TLabel", anchor="w")
     warning_label.pack(fill="x", padx=int(20*sf))
+    Tooltip(warning_label, lambda: warning_label.cget("text"), delay=500)
 
     # 用户点击非 Listbox 或 Entry 区域时销毁 Listbox
     root.bind("<Button-1>", hide_history)
@@ -1644,6 +1773,13 @@ try:
     cache_label = ttk.Label(about_frame, text="●", style="Cache.TLabel")
     cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
     tooltip_instance = Tooltip(cache_label, get_cache_str, delay=500)
+
+    # 添加 thumbnail_check 复选框
+    thumbnail_var = tk.BooleanVar(value=True)  # 默认选中
+    thumbnail_check = ttk.Checkbutton(
+        about_frame, text="Thumbnails", variable=thumbnail_var, style="Thumbnail.TCheckbutton", command=lambda: on_tree_select(None)
+    )
+    Tooltip(thumbnail_check, lambda: "Show thumbnails", delay=500)
 
     # 运行主循环
     root.mainloop()
