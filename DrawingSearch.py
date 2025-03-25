@@ -1153,6 +1153,8 @@ def on_tree_select(event):
             thumbnail_win = tk.Toplevel(root)
             thumbnail_win.configure(bg="orange")
             thumbnail_win.overrideredirect(True)
+            # 让 thumbnail_win 依附于 root
+            #thumbnail_win.transient(root) 
             # 根据纸张方向设置窗口的大小
             if orientation == "landscape":
                 thumbnail_win_width = long_edge + int(10*sf)
@@ -1169,9 +1171,9 @@ def on_tree_select(event):
             label.image = thumbnail  # 保持引用，防止被垃圾回收
 
             # 缩略图窗口出现主窗口左侧
-            x = root.winfo_x() - thumbnail_win_width +int(6*sf)
+            x = root.winfo_x() - thumbnail_win_width + int(7*sf)
             y = root.winfo_y() + window_height + int(48*sf)
-            thumbnail_win.geometry(f"+{x}+{y}")            
+            thumbnail_win.geometry(f"+{x}+{y}")         
     else:
         if thumbnail_win and thumbnail_win.winfo_exists():
             thumbnail_win.destroy()  # 关闭缩略图窗口
@@ -1182,22 +1184,40 @@ def on_main_window_move(event):
 
     if thumbnail_win and thumbnail_win.winfo_exists():
         # 计算新的位置
-        x = root.winfo_x() - thumbnail_win.winfo_width() + int(6 * sf)
+        x = root.winfo_x() - thumbnail_win.winfo_width() + int(7*sf)
         y = root.winfo_y() + window_height + int(48 * sf)
         thumbnail_win.geometry(f"+{x}+{y}")
 
 def on_main_window_click(event):
     """当鼠标点击主窗口时，检查是否需要关闭缩略图窗口"""
+    global thumbnail_win
+
+    # 延迟执行，避免与 on_focus_in 冲突
+    root.after(100, lambda: close_thumbnail_if_needed(event))
+
+def close_thumbnail_if_needed(event):
     global thumbnail_win, results_tree
 
-    # 获取事件发生的控件
     widget = event.widget
 
-    # 如果 `thumbnail_win` 存在且点击的控件不是 `results_tree`，则关闭缩略图
     if thumbnail_win and thumbnail_win.winfo_exists():
-        if widget != results_tree:
-            thumbnail_win.destroy()
-            thumbnail_win = None
+        if widget != results_tree and widget not in thumbnail_win.winfo_children():
+            thumbnail_win.withdraw()  # 仅隐藏窗口，而不是销毁
+
+def on_focus_in(event):
+    # 如果焦点在主窗口，调出缩略图窗口
+    global thumbnail_win
+    print("focus in")
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        if thumbnail_win.state() == "withdrawn":  # 仅当窗口被隐藏时才重新显示
+            thumbnail_win.deiconify()
+
+def on_focus_out(event):
+    # 如果主窗口失去焦点，隐藏缩略图窗口
+    global thumbnail_win
+    print("focus out")
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.withdraw()
 
 def show_about():
     """自定义关于信息的窗口"""
@@ -1606,6 +1626,8 @@ try:
     root.title("Drawing Search")
     root.bind("<Configure>", on_main_window_move)
     root.bind_all("<Button-1>", on_main_window_click)
+    root.bind("<FocusIn>", on_focus_in)
+    root.bind("<FocusOut>", on_focus_out)
     # 根据系统缩放比例调整窗口大小
     window_width = int(window_width*sf)
     window_height = int(window_height*sf)
