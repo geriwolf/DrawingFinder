@@ -966,17 +966,18 @@ def ask_user_to_select_directory(directories):
 
 def close_result_list():
     """移除搜索结果"""
-    global result_frame, results_tree, window_expanded, thumbnail_check
+    global result_frame, results_tree, window_expanded, thumbnail_check, thumbnail_win
     if result_frame:
         results_tree.destroy()
         results_tree = None
         result_frame.destroy()
         result_frame = None
         thumbnail_check.forget()
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.destroy()  # 关闭缩略图窗口
         # 取反窗口扩展标志位，通过toggle_window_size()保持当前状态
         window_expanded = not window_expanded
         toggle_window_size()
-
 
 def sort_treeview(col, columns):
     # 排序函数
@@ -1009,7 +1010,13 @@ def sort_treeview(col, columns):
 
 def show_result_list(result_files, search_type=None):
     """显示搜索结果"""
-    global result_frame, results_tree, thumbnail_check
+    global result_frame, results_tree, thumbnail_check, thumbnail_win
+
+    # 销毁原先的缩略图窗口
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.destroy()
+
+    # 如果没有搜索结果，移除搜索结果显示区域
     if not result_files:
         if result_frame:
             results_tree.destroy()
@@ -1017,7 +1024,7 @@ def show_result_list(result_files, search_type=None):
             result_frame.destroy()
             result_frame = None
             if 'thumbnail_check' in globals() and thumbnail_check:
-                thumbnail_check.pack_forget()  # 如果没有搜索结果，隐藏 thumbnail_check
+                thumbnail_check.forget()  # 如果没有搜索结果，隐藏 thumbnail_check
             if window_expanded:
                 root.geometry(f"{expand_window_width}x{window_height}")
             else:
@@ -1131,8 +1138,11 @@ def on_tree_select(event):
     selected_item = results_tree.selection()
     if not selected_item:
         return
-    # 如果复选框存在且未勾选，直接返回，不显示缩略图
+    # 如果复选框存在且未勾选，关闭缩略图显示并返回
     if 'thumbnail_check' in globals() and thumbnail_check and not thumbnail_var.get():
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.destroy()
+            thumbnail_win = None
         return
     file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
 
@@ -1153,6 +1163,9 @@ def on_tree_select(event):
             thumbnail_win = tk.Toplevel(root)
             thumbnail_win.configure(bg="orange")
             thumbnail_win.overrideredirect(True)
+            if topmost_var.get():
+                # 如果主窗口置顶，缩略图窗口也置顶
+                thumbnail_win.attributes("-topmost", True)
             # 根据纸张方向设置窗口的大小
             if orientation == "landscape":
                 thumbnail_win_width = long_edge + int(10*sf)
@@ -1169,9 +1182,9 @@ def on_tree_select(event):
             label.image = thumbnail  # 保持引用，防止被垃圾回收
 
             # 缩略图窗口出现主窗口左侧
-            x = root.winfo_x() - thumbnail_win_width +int(6*sf)
+            x = root.winfo_x() - thumbnail_win_width + int(7*sf)
             y = root.winfo_y() + window_height + int(48*sf)
-            thumbnail_win.geometry(f"+{x}+{y}")            
+            thumbnail_win.geometry(f"+{x}+{y}")
     else:
         if thumbnail_win and thumbnail_win.winfo_exists():
             thumbnail_win.destroy()  # 关闭缩略图窗口
@@ -1179,25 +1192,31 @@ def on_tree_select(event):
 def on_main_window_move(event):
     """当主窗口移动时，让 thumbnail_win 也随之移动"""
     global thumbnail_win
-
     if thumbnail_win and thumbnail_win.winfo_exists():
         # 计算新的位置
-        x = root.winfo_x() - thumbnail_win.winfo_width() + int(6 * sf)
-        y = root.winfo_y() + window_height + int(48 * sf)
+        x = root.winfo_x() - thumbnail_win.winfo_width() + int(7*sf)
+        y = root.winfo_y() + window_height + int(48*sf)
         thumbnail_win.geometry(f"+{x}+{y}")
 
-def on_main_window_click(event):
-    """当鼠标点击主窗口时，检查是否需要关闭缩略图窗口"""
-    global thumbnail_win, results_tree
+def on_focus_in(event):
+    # 如果焦点在主窗口，调出缩略图窗口
+    global thumbnail_win
+    if root.state() != "iconic" and root.state() != "withdrawn":
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            if thumbnail_win.state() == "withdrawn":  # 当窗口被隐藏时重新显示
+                thumbnail_win.deiconify()
+            thumbnail_win.lift()  # 提升缩略图窗口到最前
 
-    # 获取事件发生的控件
-    widget = event.widget
-
-    # 如果 `thumbnail_win` 存在且点击的控件不是 `results_tree`，则关闭缩略图
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        if widget != results_tree:
-            thumbnail_win.destroy()
-            thumbnail_win = None
+def on_window_state_change(event=None):
+    # 当窗口状态改变时，隐藏或显示缩略图窗口
+    global thumbnail_win
+    if root.state() == "iconic" or root.state() == "withdrawn":  # 窗口最小化或隐藏
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.withdraw()  # 隐藏缩略图窗口
+    else:  # 窗口恢复
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.deiconify()  # 显示缩略图窗口
+            thumbnail_win.lift()  # 提升缩略图窗口到最前
 
 def show_about():
     """自定义关于信息的窗口"""
@@ -1303,7 +1322,7 @@ def send_email():
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame, last_query
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, thumbnail_win
 
     entry.focus()  # 保持焦点在输入框
 
@@ -1328,6 +1347,10 @@ def reset_window():
 
     # 隐藏 thumbnail_check
     thumbnail_check.forget()
+
+    # 关闭缩略图窗口
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.destroy()
 
     # 清除上次搜索关键字记录
     last_query = None
@@ -1430,16 +1453,17 @@ def center_window(root, width, height):
     # 设置窗口的大小和位置
     root.geometry(f"{width}x{height}+{x}+{y}")
 
-# 窗口置顶
 def toggle_topmost():
     # 根据复选框的状态设置窗口是否置顶
     entry.focus()  # 保持焦点在输入框
     is_checked = topmost_var.get()
     root.attributes("-topmost", is_checked)
+    # 如果缩略图窗口存在，也设置其置顶
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.attributes("-topmost", is_checked)
 
-# 为 Entry 小部件创建一个右键菜单
 def create_entry_context_menu(entry_widget):
-    # 创建菜单
+    # 为 Entry 小部件创建一个右键菜单
     context_menu = tk.Menu(root, tearoff=0)
     
     # 定义菜单项及其功能
@@ -1464,8 +1488,11 @@ def create_entry_context_menu(entry_widget):
     # 将右键单击事件绑定到 Entry 小部件
     entry_widget.bind("<Button-3>", show_context_menu)
 
-# 打开 mini 窗口
 def open_mini_window():
+    # 打开 mini 窗口
+    # 隐藏缩略图窗口
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.withdraw()
     # 隐藏主窗口
     root.withdraw()
     
@@ -1562,15 +1589,21 @@ def show_window(new_position_left, new_position_top, expanded_status):
     else:
         window_expanded = True
         toggle_window_size()
-    root.deiconify()  # 显示窗口
+    root.deiconify()  # 显示root窗口
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.deiconify()  # 显示缩略图窗口
+        thumbnail_win.lift()
     entry.focus_set()  # 设置焦点到输入框
 
 def on_root_close():
     # 关闭主窗口时清除所有未完成的线程
+    global thumbnail_win
     stop_event.set()  # 发送退出信号
     # 等待所有线程结束
     for thread in list(active_threads):
         thread.join(timeout=0.5)  # 最多等 0.5 秒
+    if thumbnail_win and thumbnail_win.winfo_exists():
+        thumbnail_win.destroy()  # 关闭缩略图窗口
     root.destroy()  # 关闭窗口
 
 def clear_entry(event=None):
@@ -1584,6 +1617,14 @@ def update_label_color(event=None):
         clear_label.place(in_=entry, relx=1.0, rely=0.5, anchor='e', x=int(-10*sf))  # 显示 X
     else:
         clear_label.place_forget()  # 空内容时，隐藏 X
+
+def debounce(func, delay=200):
+    """装饰器函数，用于防抖"""
+    def wrapper(*args, **kwargs):
+        if hasattr(wrapper, 'after_id'):
+            root.after_cancel(wrapper.after_id)
+        wrapper.after_id = root.after(delay, lambda: func(*args, **kwargs))
+    return wrapper
 
 # 创建主窗口
 try:
@@ -1604,8 +1645,11 @@ try:
     # 设置窗口图标
     root.iconphoto(True, icon)
     root.title("Drawing Search")
+    # 绑定窗口事件
     root.bind("<Configure>", on_main_window_move)
-    root.bind_all("<Button-1>", on_main_window_click)
+    root.bind("<FocusIn>", debounce(on_focus_in))
+    root.bind("<Visibility>", debounce(on_window_state_change))
+    root.bind("<Unmap>", debounce(on_window_state_change))
     # 根据系统缩放比例调整窗口大小
     window_width = int(window_width*sf)
     window_height = int(window_height*sf)
@@ -1777,7 +1821,8 @@ try:
     # 添加 thumbnail_check 复选框
     thumbnail_var = tk.BooleanVar(value=True)  # 默认选中
     thumbnail_check = ttk.Checkbutton(
-        about_frame, text="Thumbnails", variable=thumbnail_var, style="Thumbnail.TCheckbutton", command=lambda: on_tree_select(None)
+        about_frame, text="Thumbnails", variable=thumbnail_var, style="Thumbnail.TCheckbutton", 
+        command=lambda: (on_tree_select(None), entry.focus())
     )
     Tooltip(thumbnail_check, lambda: "Show thumbnails", delay=500)
 
