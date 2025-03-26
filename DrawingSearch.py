@@ -995,9 +995,10 @@ def sort_treeview(col, columns):
     for item in results_tree.get_children(""):
         results_tree.delete(item)
 
-    # 重新插入排序后的数据
-    for values, item in sorted_data:
-        results_tree.insert("", tk.END, values=values)
+    # 重新插入排序后的数据，并应用交错颜色
+    for index, (values, _) in enumerate(sorted_data):
+        tag = 'evenrow' if index % 2 == 0 else 'oddrow'
+        results_tree.insert("", tk.END, values=values, tags=(tag,))
 
     # 切换排序状态
     results_tree.sort_states[col] = not reverse
