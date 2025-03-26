@@ -1136,6 +1136,14 @@ def on_tree_select(event):
     global thumbnail_win, results_tree, thumbnail_check, thumbnail_var
 
     hide_warning_message()  # 清除警告信息
+
+    def close_window(event=None):
+        # 关闭缩略图窗口
+        global thumbnail_win
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.destroy()
+            thumbnail_win = None
+
     selected_item = results_tree.selection()
     if not selected_item:
         return
@@ -1181,6 +1189,11 @@ def on_tree_select(event):
             label = ttk.Label(thumbnail_win, image=thumbnail, anchor="center")
             label.pack(padx=int(5*sf), pady=int(5*sf))
             label.image = thumbnail  # 保持引用，防止被垃圾回收
+
+            # 用于关闭缩略图窗口的label
+            close_label = ttk.Label(thumbnail_win, text="✕", style="Close.TLabel")
+            close_label.place(relx=1.0, x=int(-5*sf), y=int(5*sf), anchor="ne")  # 右上角
+            close_label.bind("<Button-1>", close_window)  # 绑定点击事件
 
             # 缩略图窗口出现主窗口左侧
             x = root.winfo_x() - thumbnail_win_width + int(7*sf)
@@ -1682,7 +1695,8 @@ try:
     style.configure("Cache.TLabel", font=("Segoe UI", 9), foreground="lightgray")
     style.configure("Tooltip.TLabel", background="#ffffe0")
     style.configure("Clear.TLabel", background="white")
-    style.configure("Thumbnail.TCheckbutton", font=("Segoe UI", 9)) 
+    style.configure("Thumbnail.TCheckbutton", font=("Segoe UI", 9))
+    style.configure("Close.TLabel", foreground="red", background="white", font=("Segoe UI", 8))
 
     # 添加置顶选项
     # 创建一个 IntVar 绑定复选框的状态（0 未选中，1 选中）
