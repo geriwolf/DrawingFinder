@@ -45,6 +45,7 @@ directory_cache = collections.OrderedDict()  # 使用 OrderedDict 维护缓存�
 cache_max_size = 10  # 设置缓存最大条目数，防止缓存过大
 cache_lock = threading.Lock()  # 用于保护缓存的线程锁
 thumbnail_win = None
+last_file = None # 用于记录上一次在缩略图窗口中打开的文件
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "Parts Folder", "path": "K:\\PARTS"},
@@ -192,11 +193,14 @@ def reset_to_default_directory():
 def open_file(event=None, file_path=None):
     """用系统默认程序打开选中的文件"""
     if not file_path:  # 如果没有传入路径，则尝试从 Treeview 中获取
-        selected_item = results_tree.selection()
+        tree = event.widget
+        click_item = tree.identify_row(event.y)  # 判断点击位置是否有对应的行
+        if not click_item:  # 如果为空，说明点击在空白区域或者表头，直接返回
+            return
+        selected_item = results_tree.selection()  # 获取选中的行
         if selected_item:
             file_path = results_tree.item(selected_item, 'values')[2]  # 获取完整文件路径
         else:
-            # 用户如果点击表头不做任何操作，直接返回
             return
     if file_path and os.path.exists(file_path):
         try:
@@ -1115,8 +1119,8 @@ def get_pdf_page_orientation(pdf_path):
         else:
             return "portrait", height, width
     except Exception as e:
-        show_warning_message(f"Unknown PDF orientation: {e}", "red")
-        return "landscape", width, height # 失败时默认横向
+        show_warning_message(f"Unable to read PDF: {e}", "red")
+        return None, None, None # 失败时返回None
 
 def generate_pdf_thumbnail(pdf_path, thumbnail_size=(220, 170)):
     """生成 PDF 文件的缩略图，220x170是根据letter纸张比例设置"""
@@ -1128,12 +1132,12 @@ def generate_pdf_thumbnail(pdf_path, thumbnail_size=(220, 170)):
         img.thumbnail(thumbnail_size)  # 生成缩略图
         return ImageTk.PhotoImage(img)
     except Exception as e:
-        show_warning_message(f"Unable to generate PDF thumbnail: {e}", "red")
+        show_warning_message(f"Unable to generate thumbnail: {e}", "red")
         return None
 
 def on_tree_select(event):
     """当选中某个搜索结果时，如果是 PDF 文件，则在独立窗口显示缩略图"""
-    global thumbnail_win, results_tree, thumbnail_check, thumbnail_var
+    global thumbnail_win, results_tree, thumbnail_check, thumbnail_var, last_file
 
     hide_warning_message()  # 清除警告信息
 
@@ -1155,19 +1159,28 @@ def on_tree_select(event):
         return
     file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
 
+    # 如果点击的是同一个文件，不重复生成缩略图
+    if last_file == file_path:
+        return
+    else:
+        last_file = file_path
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.destroy()  # 销毁旧窗口
+
     if file_path.lower().endswith(".pdf"):
         orientation, width, height = get_pdf_page_orientation(file_path)  # 判断 PDF 方向，获取长宽数据
+        if not orientation:
+            # 文件读取失败，重置 last_file
+            last_file = None
+            return
         # 缩略图缩小1/5
         long_edge = int(width / 5 * sf)
-        short_edge = int(height / 5 *sf)
+        short_edge = int(height / 5 * sf)
         if orientation == "landscape":
             thumbnail = generate_pdf_thumbnail(file_path, (long_edge, short_edge))
         else:
             thumbnail = generate_pdf_thumbnail(file_path, (short_edge, long_edge))
         if thumbnail:
-            if thumbnail_win and thumbnail_win.winfo_exists():
-                thumbnail_win.destroy()  # 先销毁旧窗口
-
             # 创建一个新的独立窗口
             thumbnail_win = tk.Toplevel(root)
             thumbnail_win.configure(bg="orange")
@@ -1199,6 +1212,9 @@ def on_tree_select(event):
             x = root.winfo_x() - thumbnail_win_width + int(7*sf)
             y = root.winfo_y() + window_height + int(48*sf)
             thumbnail_win.geometry(f"+{x}+{y}")
+        else:
+            # 生成缩略图失败，重置 last_file
+            last_file = None
     else:
         if thumbnail_win and thumbnail_win.winfo_exists():
             thumbnail_win.destroy()  # 关闭缩略图窗口
@@ -1696,7 +1712,7 @@ try:
     style.configure("Tooltip.TLabel", background="#ffffe0")
     style.configure("Clear.TLabel", background="white")
     style.configure("Thumbnail.TCheckbutton", font=("Segoe UI", 9))
-    style.configure("Close.TLabel", foreground="red", background="white", font=("Segoe UI", 8))
+    style.configure("Close.TLabel", foreground="red", background="white", font=("Segoe UI", 9))
 
     # 添加置顶选项
     # 创建一个 IntVar 绑定复选框的状态（0 未选中，1 选中）
@@ -1722,7 +1738,7 @@ try:
     elif ScaleFactor == 125:
         btn_width = 20
         entry_width = 25
-        parts_dir_width = 36
+        parts_dir_width = 37
         parts_y_position = int(5*sf)
     elif ScaleFactor == 150:
         btn_width = 19
@@ -1734,6 +1750,11 @@ try:
         entry_width = 26
         parts_dir_width = 36
         parts_y_position = int(5*sf+10)
+    elif ScaleFactor == 200:
+        btn_width = 20
+        entry_width = 26
+        parts_dir_width = 38
+        parts_y_position = int(5*sf+14)
     else:
         btn_width = 20
         entry_width = 25
