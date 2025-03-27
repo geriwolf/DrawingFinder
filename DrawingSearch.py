@@ -420,17 +420,23 @@ def on_cache_label_click(event):
 
     now = datetime.datetime.now()
     # 如果第一次点击或者距离上次点击超过10秒，重新计数
-    if cache_label_click_first_time is None or (now - cache_label_click_first_time).total_seconds() > 10:
+    if cache_label_click_first_time is None:
+        cache_label_click_first_time = now
+        cache_label_click_count = 0
+        if warning_label.cget("text").startswith("Cache is refreshing") and not any(t.name.startswith("cache_thread") for t in active_threads):
+            hide_warning_message()
+    elif (now - cache_label_click_first_time).total_seconds() > 10:
         cache_label_click_first_time = now
         cache_label_click_count = 0
         if warning_label.cget("text").startswith("Continue clicking"):
+            show_warning_message("Timeout!", "red")
+        elif warning_label.cget("text").startswith("Timeout"):
             hide_warning_message()
-        if warning_label.cget("text").startswith("Cache is refreshing") and not any(t.name.startswith("cache_thread") for t in active_threads):
-            hide_warning_message()
+        
     cache_label_click_count += 1
 
-    # 如果点击次数达到5次，给出提示继续点击可刷新缓存
-    if 5 <= cache_label_click_count < 10:
+    # 如果点击次数达到2次，给出提示继续点击可刷新缓存
+    if 2 <= cache_label_click_count < 10:
         remaining = 10 - cache_label_click_count
         show_warning_message(f"Continue clicking {remaining} times (in 10 sec) to refresh the cache", "blue")
 
@@ -1401,7 +1407,7 @@ def send_email():
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, thumbnail_win
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, thumbnail_win, cache_label_click_count
 
     entry.focus()  # 保持焦点在输入框
 
@@ -1423,6 +1429,9 @@ def reset_window():
 
     # 重置cache label颜色
     cache_label.config(foreground="lightgray")
+
+    # 重置缓存点击次数
+    cache_label_click_count = 0
 
     # 隐藏 thumbnail_check
     thumbnail_check.forget()
