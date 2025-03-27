@@ -1156,6 +1156,7 @@ def show_result_list(result_files, search_type=None):
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     results_tree.bind("<Button-3>", on_right_click)  # 右键菜单
     results_tree.bind("<Double-1>", open_file)
+    results_tree.bind("<Return>", open_file)
     results_tree.bind("<<TreeviewSelect>>", on_tree_select)
 
     # 动态调整窗口大小以显示结果
