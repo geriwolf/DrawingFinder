@@ -46,6 +46,9 @@ cache_max_size = 10  # 设置缓存最大条目数，防止缓存过大
 cache_lock = threading.Lock()  # 用于保护缓存的线程锁
 thumbnail_win = None
 last_file = None # 用于记录上一次在缩略图窗口中打开的文件
+# 全局点击计数器，用于刷新缓存功能
+cache_label_click_count = 0
+cache_label_click_first_time = None
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "Parts Folder", "path": "K:\\PARTS"},
@@ -391,6 +394,52 @@ def get_cached_directory(search_directory):
         directory_cache.move_to_end(search_directory)
         return directory_cache[search_directory]
     return None
+
+def refresh_cache():
+    """对已缓存目录进行刷新缓存操作"""
+    global directory_cache, last_query
+    # 刷新前先清空目录缓存
+    cached_dirs = list(directory_cache.keys())
+    directory_cache.clear()
+    last_query = None
+    # 对于已经建立缓存的所有目录，重新创建缓存
+    for search_directory in cached_dirs:
+        # 重新启动缓存线程
+        thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
+        thread.start()
+
+def on_cache_label_click(event):
+    """通过点击cache_label的次数10秒内达到10次来刷新缓存"""
+    global cache_label_click_count, cache_label_click_first_time
+    # 如果没有缓存目录，直接返回
+    if not directory_cache:
+        return
+    # 检查是否有缓存线程在运行，如果有则不刷新
+    if any(t.name.startswith("cache_thread") for t in active_threads):
+        return
+
+    now = datetime.datetime.now()
+    # 如果第一次点击或者距离上次点击超过10秒，重新计数
+    if cache_label_click_first_time is None or (now - cache_label_click_first_time).total_seconds() > 10:
+        cache_label_click_first_time = now
+        cache_label_click_count = 0
+        if warning_label.cget("text").startswith("Continue clicking"):
+            hide_warning_message()
+        if warning_label.cget("text").startswith("Cache is refreshing") and not any(t.name.startswith("cache_thread") for t in active_threads):
+            hide_warning_message()
+    cache_label_click_count += 1
+
+    # 如果点击次数达到5次，给出提示继续点击可刷新缓存
+    if 5 <= cache_label_click_count < 10:
+        remaining = 10 - cache_label_click_count
+        show_warning_message(f"Continue clicking {remaining} times (in 10 sec) to refresh the cache", "blue")
+
+    # 如果点击次数达到10次，刷新缓存
+    if cache_label_click_count >= 10:
+        cache_label_click_count = 0
+        cache_label_click_first_time = None
+        refresh_cache()
+        show_warning_message("Cache is refreshing in the background...", "blue")
 
 def search_files(query, search_type=None):
     """根据不同搜索类型，搜索PARTS目录下的文件"""
@@ -1852,6 +1901,7 @@ try:
     # 显示缓存状态, 灰色无缓存，绿色缓存已完成，红色正在缓存
     cache_label = ttk.Label(about_frame, text="●", style="Cache.TLabel")
     cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
+    cache_label.bind("<Button-1>", on_cache_label_click)
     tooltip_instance = Tooltip(cache_label, get_cache_str, delay=500)
 
     # 添加 thumbnail_check 复选框
