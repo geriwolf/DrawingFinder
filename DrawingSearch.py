@@ -9,8 +9,9 @@ import glob
 import threading
 import ctypes
 import fitz  # PyMuPDF
+import subprocess
 from tkinter import filedialog
-from tkinter import ttk
+from tkinter import Menu, ttk
 from PIL import Image, ImageTk
 from logo import ICON_BASE64
 
@@ -22,7 +23,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.3"  # 版本号
+ver = "1.3.4"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -1153,6 +1154,7 @@ def show_result_list(result_files, search_type=None):
 
     results_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    results_tree.bind("<Button-3>", on_right_click)  # 右键菜单
     results_tree.bind("<Double-1>", open_file)
     results_tree.bind("<<TreeviewSelect>>", on_tree_select)
 
@@ -1163,6 +1165,27 @@ def show_result_list(result_files, search_type=None):
         root.geometry(f"{expand_window_width}x{min(new_height, int(540*sf))}")
     else:
         root.geometry(f"{window_width}x{min(new_height, int(540*sf))}")
+
+def on_right_click(event):
+    """给 Treeview 添加右键菜单"""
+    item = results_tree.identify_row(event.y)
+    if not item:
+        return
+    
+    results_tree.selection_set(item)
+    file_path = results_tree.item(item, 'values')[2]
+    
+    menu = Menu(results_tree, tearoff=0)
+
+    # 打开文件所在目录并选中文件
+    def open_file_location():
+        folder = os.path.dirname(file_path)
+        if os.path.exists(folder):
+            # 使用 explorer /select 来选中文件
+            subprocess.run(["explorer", "/select,", file_path])  # Windows 平台
+    menu.add_command(label="Open File Location", command=open_file_location)
+
+    menu.post(event.x_root, event.y_root)
 
 def get_pdf_page_orientation(pdf_path):
     """获取 PDF 第一页的方向（横向 or 纵向）"""
@@ -1218,7 +1241,8 @@ def on_tree_select(event):
 
     # 如果点击的是同一个文件，不重复生成缩略图
     if last_file == file_path:
-        return
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            return
     else:
         last_file = file_path
         if thumbnail_win and thumbnail_win.winfo_exists():
@@ -1259,6 +1283,7 @@ def on_tree_select(event):
             label = ttk.Label(thumbnail_win, image=thumbnail, anchor="center")
             label.pack(padx=int(5*sf), pady=int(5*sf))
             label.image = thumbnail  # 保持引用，防止被垃圾回收
+            label.bind("<Double-1>", lambda event: open_file(file_path=file_path))  # 双击打开文件
 
             # 用于关闭缩略图窗口的label
             close_label = ttk.Label(thumbnail_win, text="✕", style="Close.TLabel")
@@ -1635,6 +1660,7 @@ def open_mini_window():
     # 在框架中添加一个输入框
     mini_entry = ttk.Entry(mini_frame, font=("Segoe UI", 12), width=13)
     mini_entry.pack(side="left", pady=0, padx=int(5*sf))
+    create_entry_context_menu(mini_entry)
     mini_entry.focus()
 
     # 定义 mini 窗口的搜索操作
