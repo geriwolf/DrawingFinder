@@ -22,7 +22,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.2"  # 版本号
+ver = "1.3.3"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -419,13 +419,15 @@ def on_cache_label_click(event):
         return
 
     now = datetime.datetime.now()
-    # 如果第一次点击或者距离上次点击超过10秒，重新计数
+
     if cache_label_click_first_time is None:
+        # 如果第一次点击，记录当前时间
         cache_label_click_first_time = now
         cache_label_click_count = 0
         if warning_label.cget("text").startswith("Cache is refreshing") and not any(t.name.startswith("cache_thread") for t in active_threads):
             hide_warning_message()
     elif (now - cache_label_click_first_time).total_seconds() > 10:
+        # 如果第一次点击或者距离上次点击超过10秒，重新计数
         cache_label_click_first_time = now
         cache_label_click_count = 0
         if warning_label.cget("text").startswith("Continue clicking"):
