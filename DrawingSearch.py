@@ -1178,12 +1178,18 @@ def on_right_click(event):
     
     menu = Menu(results_tree, tearoff=0)
 
+    # 打开文件
+    def open_file_right_menu():
+        if os.path.exists(file_path):
+            os.startfile(file_path)
+    menu.add_command(label="Open", command=open_file_right_menu)
+
     # 打开文件所在目录并选中文件
     def open_file_location():
         folder = os.path.dirname(file_path)
         if os.path.exists(folder):
             # 使用 explorer /select 来选中文件
-            subprocess.run(["explorer", "/select,", file_path])  # Windows 平台
+            subprocess.run(["explorer", "/select,", file_path])
     menu.add_command(label="Open File Location", command=open_file_location)
 
     menu.post(event.x_root, event.y_root)
