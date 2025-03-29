@@ -23,7 +23,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.4"  # 版本号
+ver = "1.3.5"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -197,15 +197,25 @@ def reset_to_default_directory():
 def open_file(event=None, file_path=None):
     """用系统默认程序打开选中的文件"""
     if not file_path:  # 如果没有传入路径，则尝试从 Treeview 中获取
-        tree = event.widget
-        click_item = tree.identify_row(event.y)  # 判断点击位置是否有对应的行
-        if not click_item:  # 如果为空，说明点击在空白区域或者表头，直接返回
-            return
-        selected_item = results_tree.selection()  # 获取选中的行
-        if selected_item:
-            file_path = results_tree.item(selected_item, 'values')[2]  # 获取完整文件路径
+        if event and event.widget == results_tree:  # 确保事件来自 results_tree
+            # 如果是鼠标事件，优先使用鼠标点击的行
+            if hasattr(event, 'y'):  # 检查是否有 y 属性
+                click_item = results_tree.identify_row(event.y)  # 获取鼠标点击的行
+                if click_item:
+                    selected_item = [click_item]  # 将点击的行作为选中项
+                else:
+                    selected_item = results_tree.selection()  # 如果没有点击项，则使用当前选中项
+            else:
+                # 键盘事件，直接使用当前选中项
+                selected_item = results_tree.selection()
         else:
             return
+
+        if selected_item and results_tree.exists(selected_item[0]):  # 确保有选中项且存在
+            file_path = results_tree.item(selected_item[0], 'values')[2]  # 获取完整文件路径
+        else:
+            return
+
     if file_path and os.path.exists(file_path):
         try:
             os.startfile(file_path)
@@ -1159,6 +1169,22 @@ def show_result_list(result_files, search_type=None):
     results_tree.bind("<Return>", open_file)
     results_tree.bind("<<TreeviewSelect>>", on_tree_select)
 
+    # 绑定键盘事件，按下 ESC 键时让 Entry 获得焦点
+    def focus_entry(event=None):
+        entry.focus()  # 让 Entry 获得焦点
+        entry.selection_range(0, tk.END)  # 选中所有文字
+    results_tree.bind("<Escape>", focus_entry)
+
+    # 鼠标点击空白区域时清除选中项并关闭缩略图窗口
+    def clear_selection_if_blank(event):
+        # 判断用户点击的位置是否在有效的行上
+        select_item = results_tree.identify_row(event.y)  # 获取点击位置的行 ID
+        if not select_item:  # 如果没有行 ID，说明点击的是空白区域
+            results_tree.selection_remove(results_tree.selection())  # 清除选中项
+        if thumbnail_win and thumbnail_win.winfo_exists():
+            thumbnail_win.destroy()  # 关闭缩略图窗口
+    results_tree.bind("<Button-1>", clear_selection_if_blank)
+
     # 动态调整窗口大小以显示结果
     root.update_idletasks()
     new_height = int(420*sf) + len(result_files) * int(25*sf) if result_files else window_height
@@ -1166,6 +1192,14 @@ def show_result_list(result_files, search_type=None):
         root.geometry(f"{expand_window_width}x{min(new_height, int(540*sf))}")
     else:
         root.geometry(f"{window_width}x{min(new_height, int(540*sf))}")
+
+    if results_tree.get_children():
+        # 如果有搜索结果，焦点移至第一个结果
+        first_item = results_tree.get_children()[0]
+        results_tree.focus_set()
+        results_tree.focus(first_item)
+        results_tree.selection_set(first_item)
+        #results_tree.event_generate("<<TreeviewSelect>>")
 
 def on_right_click(event):
     """给 Treeview 添加右键菜单"""
