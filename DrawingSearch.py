@@ -23,7 +23,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.5"  # 版本号
+ver = "1.3.6"  # 版本号
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -48,8 +48,8 @@ cache_lock = threading.Lock()  # 用于保护缓存的线程锁
 thumbnail_win = None
 last_file = None # 用于记录上一次在缩略图窗口中打开的文件
 # 全局点击计数器，用于刷新缓存功能
-cache_label_click_count = 0
-cache_label_click_first_time = None
+refresh_cache_click_count = 0
+refresh_cache_click_first_time = None
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "Parts Folder", "path": "K:\\PARTS"},
@@ -320,8 +320,9 @@ def build_directory_cache_thread(search_directory):
     active_threads.add(thread)
     thread.name = f"cache_thread_{search_directory}"
     
-    # 缓存开始，更改cache_label的颜色
+    # 缓存开始，更改cache_label以及refresh_cache_label的颜色
     root.after(0, lambda: cache_label.config(foreground="red"))
+    root.after(0, lambda: refresh_cache_label.config(foreground="lightgray"))
 
     try:
         files_info = []
@@ -382,19 +383,22 @@ def get_cache_str():
             return f"Caching in progress: [{', '.join(caching_list)}]\rCache completed: [{', '.join(cached_dir)}]"
 
 def show_cache_status():
-    # 获取cache的状态并设置颜色
+    # 获取cache的状态并设置cache_label和refresh_cache_label颜色
     cache_pattern = re.compile(r"cache_thread_.*?\\([^\\,]+)(?=\s|,|$)")
     caching_list = [match.group(1) for item in active_threads if (match := cache_pattern.search(str(item)))]
 
     # 如果点击了重置按钮，直接改为灰色
     if stop_event.is_set():
-        root.after(0, lambda: cache_label.config(foreground="lightgray"))
+        root.after(0, lambda: cache_label.config(foreground="lightgray"))  # 设置cache_label为灰色
+        root.after(0, lambda: refresh_cache_label.config(foreground="#F0F0F0"))  # 隐藏refresh_cache_label
         return
     
     if not caching_list:
-        root.after(0, lambda: cache_label.config(foreground="lime"))
+        root.after(0, lambda: cache_label.config(foreground="lime"))  # 设置cache_label为绿色
+        root.after(0, lambda: refresh_cache_label.config(foreground="black"))  # 显示refresh_cache_label
     else:
-        root.after(0, lambda: cache_label.config(foreground="red"))
+        root.after(0, lambda: cache_label.config(foreground="red"))  # 设置cache_label为红色
+        root.after(0, lambda: refresh_cache_label.config(foreground="lightgray")) # 设置refresh_cache_label为灰色
 
 def get_cached_directory(search_directory):
     """
@@ -416,12 +420,12 @@ def refresh_cache():
     # 对于已经建立缓存的所有目录，重新创建缓存
     for search_directory in cached_dirs:
         # 重新启动缓存线程
-        thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
+        thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,), daemon=True)
         thread.start()
 
-def on_cache_label_click(event):
-    """通过点击cache_label的次数10秒内达到10次来刷新缓存"""
-    global cache_label_click_count, cache_label_click_first_time
+def on_refresh_cache_click(event):
+    """通过点击refresh_cache_label的次数5秒内达到5次来刷新缓存"""
+    global refresh_cache_click_count, refresh_cache_click_first_time
     # 如果没有缓存目录，直接返回
     if not directory_cache:
         return
@@ -431,32 +435,43 @@ def on_cache_label_click(event):
 
     now = datetime.datetime.now()
 
-    if cache_label_click_first_time is None:
-        # 如果第一次点击，记录当前时间
-        cache_label_click_first_time = now
-        cache_label_click_count = 0
+    if refresh_cache_click_first_time is None:
+        # 如果第一次点击，记录当前时间，计数器置0
+        refresh_cache_click_first_time = now
+        refresh_cache_click_count = 0
+        # 如果显示的是"Cache is refreshing"的提示，但是没有任何缓存线程在运行，说明缓存已经刷新完成，则隐藏提示并返回
         if warning_label.cget("text").startswith("Cache is refreshing") and not any(t.name.startswith("cache_thread") for t in active_threads):
             hide_warning_message()
-    elif (now - cache_label_click_first_time).total_seconds() > 10:
-        # 如果第一次点击或者距离上次点击超过10秒，重新计数
-        cache_label_click_first_time = now
-        cache_label_click_count = 0
+            return
+    elif (now - refresh_cache_click_first_time).total_seconds() > 5:
+        # 如果第一次点击距离当前点击超过5秒，重新计时，计数器置0
+        refresh_cache_click_first_time = now
+        refresh_cache_click_count = 0
         if warning_label.cget("text").startswith("Continue clicking"):
-            show_warning_message("Timeout!", "red")
+            # 如果提示信息是"Continue clicking"，说明未能在5秒内点击5次，给出提示超时，并返回
+            show_warning_message("Timeout click!", "red")
+            return
         elif warning_label.cget("text").startswith("Timeout"):
+            # 如果提示信息是"Timeout click"，说明距离上一次超时点击又超时5s，则隐藏提示，并返回
             hide_warning_message()
-        
-    cache_label_click_count += 1
+            return
+    elif ((now - refresh_cache_click_first_time).total_seconds()) <= 5:
+        # 如果第一次点击距离当前点击在5秒内，继续计数
+        if warning_label.cget("text").startswith("Timeout"):
+            # 如果提示信息是"Timeout click"，说明上一次点击已经超时，但当前点击距离前一次在5s内，则隐藏提示，并继续计数
+            hide_warning_message()
+    
+    refresh_cache_click_count += 1
 
     # 如果点击次数达到2次，给出提示继续点击可刷新缓存
-    if 2 <= cache_label_click_count < 10:
-        remaining = 10 - cache_label_click_count
-        show_warning_message(f"Continue clicking {remaining} times (in 10 sec) to refresh the cache", "blue")
+    if 2 <= refresh_cache_click_count < 5:
+        remaining = 5 - refresh_cache_click_count
+        show_warning_message(f"Continue clicking {remaining} times (in 5 sec) to refresh the cache", "blue")
 
-    # 如果点击次数达到10次，刷新缓存
-    if cache_label_click_count >= 10:
-        cache_label_click_count = 0
-        cache_label_click_first_time = None
+    # 如果点击次数达到5次，刷新缓存
+    if refresh_cache_click_count >= 5:
+        refresh_cache_click_count = 0
+        refresh_cache_click_first_time = None
         refresh_cache()
         show_warning_message("Cache is refreshing in the background...", "blue")
 
@@ -513,7 +528,7 @@ def search_files(query, search_type=None):
             query = query[:3] + '.*' + query[3:]
 
     stop_event.clear()  # 确保上一次的停止信号被清除
-    search_thread = threading.Thread(target=search_files_thread, args=(query, search_directory, search_type))
+    search_thread = threading.Thread(target=search_files_thread, args=(query, search_directory, search_type), daemon=True)
     search_thread.start()
 
 def search_files_thread(query, search_directory, search_type):
@@ -541,7 +556,7 @@ def search_files_thread(query, search_directory, search_type):
             # 如果缓存中没有该目录的记录，则在后台建立缓存
             # 检查是否已经有当前搜索目录的缓存线程在运行
             if not any(t.name == f"cache_thread_{search_directory}" for t in active_threads):
-                cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,))
+                cache_thread = threading.Thread(target=build_directory_cache_thread, args=(search_directory,), daemon=True)
                 cache_thread.name = f"cache_thread_{search_directory}"
                 cache_thread.start()
 
@@ -890,7 +905,7 @@ def search_vault_cache():
         query = real_query
 
     stop_event.clear()  # 确保上一次的停止信号被清除
-    search_thread = threading.Thread(target=search_vault_cache_thread, args=(query, search_directory,))
+    search_thread = threading.Thread(target=search_vault_cache_thread, args=(query, search_directory,), daemon=True)
     search_thread.start()
 
 def search_vault_cache_thread(query, search_directory):
@@ -1475,7 +1490,7 @@ def send_email():
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, thumbnail_win, cache_label_click_count
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, thumbnail_win, refresh_cache_click_count
 
     entry.focus()  # 保持焦点在输入框
 
@@ -1499,7 +1514,10 @@ def reset_window():
     cache_label.config(foreground="lightgray")
 
     # 重置缓存点击次数
-    cache_label_click_count = 0
+    refresh_cache_click_count = 0
+
+    # 隐藏刷新按钮，与窗口背景同色
+    refresh_cache_label.config(foreground="#F0F0F0")
 
     # 隐藏 thumbnail_check
     thumbnail_check.forget()
@@ -1674,6 +1692,14 @@ def open_mini_window():
         else:
             clear_label_mini.place_forget()  # 空内容时，隐藏 X`
 
+    def on_focus_in(event):
+        # 当窗口获得焦点时，设置透明度为 1
+        mini_win.attributes('-alpha', 1)
+
+    def on_focus_out(event):
+        # 当窗口失去焦点时，设置透明度为 0.5
+        mini_win.attributes('-alpha', 0.5)
+
     # 创建 mini 窗口
     mini_win = tk.Toplevel(root)
     mini_win.withdraw()  # 先隐藏窗口
@@ -1682,8 +1708,12 @@ def open_mini_window():
     mini_win_height = int(35*sf)
     mini_win.geometry(f"{mini_win_width}x{mini_win_height}")
     mini_win.attributes("-topmost", True) # 窗口置顶
-    mini_win.attributes('-alpha', 0.6)  # 设置窗口透明度
+    mini_win.attributes('-alpha', 1)  # 设置初始窗口透明度
     mini_win.resizable(False, False)
+
+    # 绑定mini窗口焦点事件
+    mini_win.bind('<FocusIn>', on_focus_in)  # 窗口获得焦点时触发
+    mini_win.bind('<FocusOut>', on_focus_out)  # 窗口失去焦点时触发
 
     # 设置窗口图标（复用主窗口图标）
     mini_win.iconphoto(True, icon)
@@ -1756,11 +1786,17 @@ def on_root_close():
     # 关闭主窗口时清除所有未完成的线程
     global thumbnail_win
     stop_event.set()  # 发送退出信号
-    # 等待所有线程结束
-    for thread in list(active_threads):
-        thread.join(timeout=0.5)  # 最多等 0.5 秒
+
+    # 强制终止所有子线程。实际上这段代码可以不写，
+    # 因为所有线程都已经设置为守护线程deamon=True，会在主线程退出时自动结束，
+    # 加了这段代码是为了确保没有遗漏的非守护线程
+    for thread in threading.enumerate():
+        if thread is not threading.main_thread():
+            thread.join(timeout=0.1)  # 等待 0.1 秒
+
+    # 关闭缩略图窗口
     if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.destroy()  # 关闭缩略图窗口
+        thumbnail_win.destroy()
     root.destroy()  # 关闭窗口
 
 def clear_entry(event=None):
@@ -1836,6 +1872,7 @@ try:
     style.configure("Change.TLabel", font=("Segoe UI", 8, "underline"), foreground="blue")
     style.configure("About.TLabel", font=("Segoe UI", 12, "bold"))
     style.configure("Cache.TLabel", font=("Segoe UI", 9), foreground="lightgray")
+    style.configure("RefreshCache.TLabel", font=("Segoe UI", 12))
     style.configure("Tooltip.TLabel", background="#ffffe0")
     style.configure("Clear.TLabel", background="white")
     style.configure("Thumbnail.TCheckbutton", font=("Segoe UI", 9))
@@ -1959,13 +1996,13 @@ try:
     # Change 按钮
     change_label = ttk.Label(directory_frame, text="Change", style="Change.TLabel", cursor="hand2")
     change_label.pack(side=tk.LEFT, padx=int(8*sf))
-    Tooltip(change_label,  lambda: "Select a new PARTS directory", delay=500)
+    Tooltip(change_label, lambda: "Select a new PARTS directory", delay=500)
     change_label.bind("<Button-1>", lambda event: update_directory())
 
     # Default 按钮
     default_label = ttk.Label(directory_frame, text="Default", style="Change.TLabel", cursor="hand2")
     default_label.pack(side=tk.LEFT, padx=0)
-    Tooltip(default_label,  lambda: "Reset the PARTS directory to default", delay=500)
+    Tooltip(default_label, lambda: "Reset the PARTS directory to default", delay=500)
     default_label.bind("<Button-1>", lambda event: reset_to_default_directory())
 
     # About 按钮
@@ -1973,14 +2010,27 @@ try:
     about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
     about_label = ttk.Label(about_frame, text="ⓘ", style="About.TLabel", cursor="hand2")
     about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(8*sf)))
-    Tooltip(about_label,  lambda: "About", delay=500)
+    Tooltip(about_label, lambda: "About", delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
+
+    # 添加刷新缓存标志
+    # 先设置与窗口背景同色隐藏刷新标志，等有缓存完成后再显示
+    refresh_cache_label = ttk.Label(about_frame, text="⟳", style="RefreshCache.TLabel", foreground="#F0F0F0")
+    refresh_cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
+    # 只有当refresh_cache_label是非隐藏的状态（非"#F0F0F0"颜色），才显示Tooltip
+    def get_refresh_tooltip():
+        current_fg = str(refresh_cache_label.cget("foreground")).lower()  # 获取当前字体颜色，转为小写以统一比较
+        if current_fg == "#f0f0f0":
+            return ""  # 颜色为 #F0F0F0 时返回空字符串，不显示 Tooltip
+        return "Click repeatedly to refresh the cached directories"  # 其他颜色时显示提示
+    Tooltip(refresh_cache_label, get_refresh_tooltip, delay=500)
+    refresh_cache_label.bind("<Button-1>", on_refresh_cache_click)
 
     # 显示缓存状态, 灰色无缓存，绿色缓存已完成，红色正在缓存
     cache_label = ttk.Label(about_frame, text="●", style="Cache.TLabel")
     cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
-    cache_label.bind("<Button-1>", on_cache_label_click)
-    tooltip_instance = Tooltip(cache_label, get_cache_str, delay=500)
+    Tooltip(cache_label, get_cache_str, delay=500)
+    cache_label.bind("<Button-1>", on_refresh_cache_click)  # 绑定点击刷新缓存函数，在点击该处时也能刷新缓存
 
     # 添加 thumbnail_check 复选框
     thumbnail_var = tk.BooleanVar(value=True)  # 默认选中
