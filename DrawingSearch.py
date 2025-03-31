@@ -1908,7 +1908,7 @@ try:
         btn_width = 19
         entry_width = 26
         parts_dir_width = 35
-        parts_y_position = int(5*sf+4)
+        parts_y_position = int(5*sf+5)
     elif ScaleFactor == 175:
         btn_width = 21
         entry_width = 26
@@ -1921,9 +1921,10 @@ try:
         parts_y_position = int(5*sf+14)
     else:
         btn_width = 20
-        entry_width = 25
+        entry_width = 26
         parts_dir_width = 35
-        parts_y_position = int(5*sf)
+        # 对于大于200的缩放比例，进行特殊处理，使最后一行始终位于窗口底部
+        parts_y_position = int(5*sf+(sf*100-125)/25*5)
 
     # 创建输入框框架
     entry_frame = tk.Frame(root)
