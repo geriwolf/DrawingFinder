@@ -10,10 +10,12 @@ import threading
 import ctypes
 import fitz  # PyMuPDF
 import subprocess
+import locale
 from tkinter import filedialog
 from tkinter import Menu, ttk
 from PIL import Image, ImageTk
 from logo import ICON_BASE64
+from language import LANGUAGES
 
 try:
     import tkinter as tk
@@ -23,7 +25,9 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.6"  # 版本号
+ver = "1.3.7"  # 版本号
+current_language = "en"  # 当前语言（默认英文）
+previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
 changed_parts_path = None  # 用户更改的 PARTS 目录
 result_frame = None  # 搜索结果的 Frame 容器
@@ -45,14 +49,14 @@ vault_cache = os.path.normpath("C:\\_Vault Working Folder\\Designs\\PARTS")  # V
 directory_cache = collections.OrderedDict()  # 使用 OrderedDict 维护缓存顺序
 cache_max_size = 10  # 设置缓存最大条目数，防止缓存过大
 cache_lock = threading.Lock()  # 用于保护缓存的线程锁
-thumbnail_win = None
-last_file = None # 用于记录上一次在缩略图窗口中打开的文件
+preview_win = None
+last_file = None # 用于记录上一次在预览窗口中打开的文件
 # 全局点击计数器，用于刷新缓存功能
 refresh_cache_click_count = 0
 refresh_cache_click_first_time = None
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
-    {"label": "Parts Folder", "path": "K:\\PARTS"},
+    {"label": "PARTS Folder", "path": "K:\\PARTS"},
     {"label": "Latest Missing List", "path": "V:\\Missing Lists\\Missing_Parts_List"},
     {"label": "Pneumatic Drawing Folder", "path": "K:\\Pneumatic Drawings"},
     {"label": "Projects Video Folder", "path": "G:\\Project Media"},
@@ -152,7 +156,7 @@ def open_shortcut(index):
             if latest_file:
                 path = latest_file
             else:
-                messagebox.showwarning("Warning", "No Missing List file found!")
+                messagebox.showwarning(LANGUAGES[current_language]['warning'], LANGUAGES[current_language]['no_missing_list'])
                 return
 
         # 如果 label 包含 "Equipment Labels Details" 字段，使用get_latest_file函数查找最新的文件
@@ -162,7 +166,7 @@ def open_shortcut(index):
             if latest_file:
                 path = latest_file
             else:
-                messagebox.showwarning("Warning", "No Equipment Labels Details file found!")
+                messagebox.showwarning(LANGUAGES[current_language]['warning'], LANGUAGES[current_language]['no_labels_file'])
                 return
         
         try:
@@ -173,24 +177,24 @@ def open_shortcut(index):
                 # 如果是文件，通过 open_file 打开
                 open_file(file_path=path)
         except Exception as e:
-            messagebox.showerror("Error", f"Cannot open shortcut: {e}")
+            messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_to_open_shortcut']}: {e}")
     else:
-        messagebox.showerror("Error", f"Shortcut path does not exist: {path}")
+        messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['shortcut_not_exist']}: {path}")
 
 def update_directory():
     """更新搜索目录"""
     global changed_parts_path, last_query
-    new_dir = filedialog.askdirectory(initialdir=default_parts_path, title="Select Directory")
+    new_dir = filedialog.askdirectory(initialdir=default_parts_path, title="Darwing Search")
     if new_dir:
         new_dir = new_dir.replace('/', '\\')  # 将路径中的斜杠替换为反斜杠
-        directory_label.config(text=f"PARTS Directory: {new_dir}")
+        directory_label.config(text=f"{LANGUAGES[current_language]['parts_dir']} {new_dir}")
         changed_parts_path = new_dir
         last_query = None
         
 def reset_to_default_directory():
     """将搜索路径重置为默认路径"""
     global changed_parts_path, last_query
-    directory_label.config(text=f"Default PARTS Directory: {default_parts_path}")
+    directory_label.config(text=f"{LANGUAGES[current_language]['default_parts_dir']} {default_parts_path}")
     changed_parts_path = None
     last_query = None
 
@@ -220,9 +224,9 @@ def open_file(event=None, file_path=None):
         try:
             os.startfile(file_path)
         except Exception as e:
-            messagebox.showerror("Error", f"Cannot open file: {e}")
+            messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_to_open_file']}: {e}")
     else:
-        messagebox.showerror("Error", "File not found!")
+        messagebox.showerror(LANGUAGES[current_language]['error'], LANGUAGES[current_language]['file_not_found'])
 
 def save_search_history(query):
     """保存搜索记录并限制最多保存20条"""
@@ -354,7 +358,7 @@ def build_directory_cache_thread(search_directory):
             directory_cache.move_to_end(search_directory)
 
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in cache thread: {e}"))
+        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_cache']}: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -369,18 +373,18 @@ def get_cache_str():
         # 没有正在缓存的目录
         if not cached_dir:
             # 没有已缓存的目录
-            return f"No cache"
+            return f"{LANGUAGES[current_language]['no_cache']}"
         else:
             # 有已缓存的目录
-            return f"Cache completed: [{', '.join(cached_dir)}]"
+            return f"{LANGUAGES[current_language]['cache_completed']} [{', '.join(cached_dir)}]"
     else:
         # 有正在缓存的目录
         if not cached_dir:
             # 没有已缓存的目录
-            return f"Caching in progress: [{', '.join(caching_list)}]"
+            return f"{LANGUAGES[current_language]['cache_in_progress']} [{', '.join(caching_list)}]"
         else:
             # 有已缓存的目录
-            return f"Caching in progress: [{', '.join(caching_list)}]\rCache completed: [{', '.join(cached_dir)}]"
+            return f"{LANGUAGES[current_language]['cache_in_progress']} [{', '.join(caching_list)}]\r{LANGUAGES[current_language]['cache_completed']} [{', '.join(cached_dir)}]"
 
 def show_cache_status():
     # 获取cache的状态并设置cache_label和refresh_cache_label颜色
@@ -440,24 +444,24 @@ def on_refresh_cache_click(event):
         refresh_cache_click_first_time = now
         refresh_cache_click_count = 0
         # 如果显示的是"Cache is refreshing"的提示，但是没有任何缓存线程在运行，说明缓存已经刷新完成，则隐藏提示并返回
-        if warning_label.cget("text").startswith("Cache is refreshing") and not any(t.name.startswith("cache_thread") for t in active_threads):
+        if warning_label.cget("text") == LANGUAGES[current_language]['cache_refreshing'] and not any(t.name.startswith("cache_thread") for t in active_threads):
             hide_warning_message()
             return
     elif (now - refresh_cache_click_first_time).total_seconds() > 5:
         # 如果第一次点击距离当前点击超过5秒，重新计时，计数器置0
         refresh_cache_click_first_time = now
         refresh_cache_click_count = 0
-        if warning_label.cget("text").startswith("Continue clicking"):
+        if warning_label.cget("text").startswith(LANGUAGES[current_language]['continue_click_1']):
             # 如果提示信息是"Continue clicking"，说明未能在5秒内点击5次，给出提示超时，并返回
-            show_warning_message("Timeout click!", "red")
+            show_warning_message(LANGUAGES[current_language]['timeout_click'], "red")
             return
-        elif warning_label.cget("text").startswith("Timeout"):
+        elif warning_label.cget("text") == LANGUAGES[current_language]['timeout_click']:
             # 如果提示信息是"Timeout click"，说明距离上一次超时点击又超时5s，则隐藏提示，并返回
             hide_warning_message()
             return
     elif ((now - refresh_cache_click_first_time).total_seconds()) <= 5:
         # 如果第一次点击距离当前点击在5秒内，继续计数
-        if warning_label.cget("text").startswith("Timeout"):
+        if warning_label.cget("text") == LANGUAGES[current_language]['timeout_click']:
             # 如果提示信息是"Timeout click"，说明上一次点击已经超时，但当前点击距离前一次在5s内，则隐藏提示，并继续计数
             hide_warning_message()
     
@@ -466,14 +470,14 @@ def on_refresh_cache_click(event):
     # 如果点击次数达到2次，给出提示继续点击可刷新缓存
     if 2 <= refresh_cache_click_count < 5:
         remaining = 5 - refresh_cache_click_count
-        show_warning_message(f"Continue clicking {remaining} times (in 5 sec) to refresh the cache", "blue")
+        show_warning_message(f"{LANGUAGES[current_language]['continue_click_1']} {remaining} {LANGUAGES[current_language]['continue_click_2']}", "blue")
 
     # 如果点击次数达到5次，刷新缓存
     if refresh_cache_click_count >= 5:
         refresh_cache_click_count = 0
         refresh_cache_click_first_time = None
         refresh_cache()
-        show_warning_message("Cache is refreshing in the background...", "blue")
+        show_warning_message(LANGUAGES[current_language]['cache_refreshing'], "blue")
 
 def search_files(query, search_type=None):
     """根据不同搜索类型，搜索PARTS目录下的文件"""
@@ -489,14 +493,14 @@ def search_files(query, search_type=None):
     
     
     if not query:
-        show_warning_message("Please enter any number or project name!", "red")
+        show_warning_message(LANGUAGES[current_language]['enter_number'], "red")
         enable_search_button() # 启用搜索按钮
         last_query = None
         return
 
     # 检查是否包含非法字符
     if any(char in query for char in "*.?+^$[]{}|\\()"):
-        show_warning_message("Invalid characters in search query!", "red")
+        show_warning_message(LANGUAGES[current_language]['invalid_characters'], "red")
         enable_search_button() # 启用搜索按钮
         last_query = None
         return
@@ -511,14 +515,14 @@ def search_files(query, search_type=None):
         search_directory = os.path.join(default_parts_path, prefix)
 
     if not os.path.exists(search_directory):
-        show_warning_message(f"Path does not exist! {search_directory}", "red")
+        show_warning_message(f"{LANGUAGES[current_language]['path_not_exist']} {search_directory}", "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
         last_query = None
         return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.", "red")
+    show_warning_message(LANGUAGES[current_language]['searching'], "red")
     query = query.lower()
     # 对STK的project number进行特殊处理
     if query.startswith("stk") and len(query) > 3:
@@ -570,7 +574,7 @@ def search_files_thread(query, search_directory, search_type):
                         return
                     # 每遍历50个文件，显示一次文件名，体现搜索过程
                     if i == 50:
-                        root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
+                        root.after(0, lambda: show_warning_message(f"{LANGUAGES[current_language]['searching']}  {file}", "red"))
                         i = 0
                     i += 1
                     # 根据不同文件类型，存储到不同list里
@@ -592,7 +596,7 @@ def search_files_thread(query, search_directory, search_type):
                 file_name = file_info[0]
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
                 if i == 50:
-                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file_name}", "red"))
+                    root.after(0, lambda: show_warning_message(f"{LANGUAGES[current_language]['searching']}  {file_name}", "red"))
                     i = 0
                 i += 1
                 # 根据不同文件类型，存储到不同list里
@@ -617,7 +621,7 @@ def search_files_thread(query, search_directory, search_type):
         if search_type == "pdf" or search_type == "lucky":
             if not result_files_pdf:
                 # 如果没有搜索到匹配的文件，显示警告信息
-                root.after(0, lambda: show_warning_message("No matching drawing PDF found!", "red"))
+                root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['no_matching_pdf'], "red"))
             else:
                 if search_type == "lucky":
                     # "I'm Feeling Lucky" 功能：直接打开第一个文件，一般按创建时间排序后就是最新的revision
@@ -629,14 +633,14 @@ def search_files_thread(query, search_directory, search_type):
         if search_type == "3d":
             if not result_files_3d:
                 # 如果没有搜索到匹配的文件，显示警告信息
-                root.after(0, lambda: show_warning_message("No matching 3D drawing found! Try using Vault Cache.", "red"))
+                root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['no_matching_3d'], "red"))
             # 显示搜索结果
             root.after(0, lambda: show_result_list(result_files_3d))
         
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
 
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
+        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -650,11 +654,11 @@ def search_pdf_files():
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
         if not result_files_pdf:
             # 如果结果是空，显示警告信息，移除之前显示的搜索结果
-            show_warning_message("No matching drawing PDF found!", "red")
+            show_warning_message(LANGUAGES[current_language]['no_matching_pdf'], "red")
             close_result_list()
         else:
             disable_search_button()
-            show_warning_message(f"Searching... Please wait.", "red")
+            show_warning_message(f"{LANGUAGES[current_language]['searching']}", "red")
             # 后台执行show_result_list
             root.after(10, lambda: (show_result_list(result_files_pdf, search_type="pdf"), hide_warning_message(), enable_search_button()))
     else:
@@ -671,11 +675,11 @@ def feeling_lucky():
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
         if not result_files_pdf:
             # 如果结果是空，显示警告信息，移除之前显示的搜索结果
-            show_warning_message("No matching drawing PDF found!", "red")
+            show_warning_message(LANGUAGES[current_language]['no_matching_pdf'], "red")
             close_result_list()
         else:
             disable_search_button()
-            show_warning_message(f"Searching... Please wait.", "red")
+            show_warning_message(f"{LANGUAGES[current_language]['searching']}", "red")
             file_path = result_files_pdf[0][2]  # 复制排在第一个的file_path的值传给open_file
             open_file(file_path=file_path)  # 打开第一个pdf文件
             # 后台执行show_result_list
@@ -694,11 +698,11 @@ def search_3d_files():
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
         if not result_files_3d:
             # 如果结果是空，显示警告信息，移除之前显示的搜索结果
-            show_warning_message("No matching 3D drawing found! Try using Vault Cache.", "red")
+            show_warning_message(LANGUAGES[current_language]['no_matching_3d'], "red")
             close_result_list()
         else:
             disable_search_button()
-            show_warning_message(f"Searching... Please wait.", "red")
+            show_warning_message(f"{LANGUAGES[current_language]['searching']}", "red")
             # 后台执行show_result_list
             root.after(10, lambda: (show_result_list(result_files_3d), hide_warning_message(), enable_search_button()))
     else:
@@ -714,13 +718,13 @@ def search_vault_cache():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message("Please enter any number or project name!", "red")
+        show_warning_message(LANGUAGES[current_language]['enter_number'], "red")
         enable_search_button() # 启用搜索按钮
         return
     
     # 检查是否包含非法字符
     if any(char in query for char in "*.?+^$[]{}|\\()"):
-        show_warning_message("Invalid characters in search query!", "red")
+        show_warning_message(LANGUAGES[current_language]['invalid_characters'], "red")
         enable_search_button() # 启用搜索按钮
         return
 
@@ -733,7 +737,7 @@ def search_vault_cache():
 
     if not os.path.exists(vault_cache):
         # 如果Vault缓存目录不存在，提示用户使用Vault
-        show_warning_message(f"Vault cache not found! Please use Vault instead.", "red")
+        show_warning_message(LANGUAGES[current_language]['vault_cache_not_found'], "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
         return
@@ -766,14 +770,14 @@ def search_vault_cache():
         prefix = query[:2]
         search_directory = os.path.join(vault_cache, prefix)
         if not os.path.exists(search_directory):
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
+            show_warning_message(LANGUAGES[current_language]['no_matching_3d_cache'], "red")
             show_result_list(None) # 目录不存在就清空已有搜索结果
             enable_search_button() # 启用搜索按钮
             return
     else:
         # 任何其他字符串，都当作是project name去匹配，去PARTS/S路径下查找匹配的目录
         if not os.path.exists(os.path.join(vault_cache, "S")):
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
+            show_warning_message(LANGUAGES[current_language]['no_matching_3d_cache'], "red")
             show_result_list(None) # 目录不存在就清空已有搜索结果
             enable_search_button() # 启用搜索按钮
             return
@@ -826,7 +830,7 @@ def search_vault_cache():
                         else:
                             query = sub_dir
             else:
-                show_warning_message("Cancelled!", "red")
+                show_warning_message(LANGUAGES[current_language]['cancelled'], "red")
                 enable_search_button() # 启用搜索按钮
                 return
         else:
@@ -834,7 +838,7 @@ def search_vault_cache():
             prefix = query[:2]
             search_directory = os.path.join(vault_cache, prefix)
             if not os.path.exists(search_directory):
-                show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
+                show_warning_message(LANGUAGES[current_language]['no_matching_3d_cache'], "red")
                 show_result_list(None) # 目录不存在就清空已有搜索结果
                 enable_search_button() # 启用搜索按钮
                 return
@@ -880,17 +884,17 @@ def search_vault_cache():
                         else:
                             query = sub_dir
             else:
-                show_warning_message("Cancelled!", "red")
+                show_warning_message(LANGUAGES[current_language]['cancelled'], "red")
                 enable_search_button() # 启用搜索按钮
                 return
         else:
-            show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red")
+            show_warning_message(LANGUAGES[current_language]['no_matching_3d_cache'], "red")
             show_result_list(None) # 目录不存在就清空已有搜索结果
             enable_search_button() # 启用搜索按钮
             return
 
     # 执行搜索
-    show_warning_message(f"Searching... Please wait.", "red")
+    show_warning_message(LANGUAGES[current_language]['searching'], "red")
     if query.lower().startswith("stk"):
         if len(query) > 3:
             if query[3] == '-' or query[3] == ' ':
@@ -933,7 +937,7 @@ def search_vault_cache_thread(query, search_directory):
                     return
                 # 每遍历50个文件，显示一次文件名，体现搜索过程
                 if i == 50:
-                    root.after(0, lambda: show_warning_message(f"Searching... Please wait.  {file}", "red"))
+                    root.after(0, lambda: show_warning_message(f"{LANGUAGES[current_language]['searching']}  {file}", "red"))
                     i = 0
                 i += 1
                 if (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
@@ -946,9 +950,9 @@ def search_vault_cache_thread(query, search_directory):
         root.after(0, hide_warning_message)  # 使用主线程清除警告信息
 
         if not result_files:
-            root.after(0, lambda: show_warning_message("No matching 3D drawings are cached. Check in Vault!", "red"))
+            root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['no_matching_3d_cache'], "red"))
         else:
-            root.after(0, lambda: show_warning_message("Tip: Searched from cache, may not be the latest update!", "blue"))
+            root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['not_latest'], "blue"))
         if len(query) > 2 and query[2].isdigit():
             # 如果是project number，按文件名正序排列
             result_files.sort(key=lambda x: x[0])
@@ -959,7 +963,7 @@ def search_vault_cache_thread(query, search_directory):
         root.after(0, lambda: show_result_list(result_files))
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror("Error", f"An error occurred in search thread: {e}"))
+        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -989,7 +993,7 @@ def ask_user_to_select_directory(directories):
     choice_win.withdraw()  # 先隐藏窗口
     choice_win.attributes("-topmost", True)
     choice_win.iconphoto(True, icon) # 设置窗口图标
-    choice_win.title("Select Project")
+    choice_win.title(LANGUAGES[current_language]['select_project'])
     choice_win_width = int(280*sf)
     choice_win_height = int(200*sf)
     choice_win.geometry(f"{choice_win_width}x{choice_win_height}")
@@ -1007,7 +1011,7 @@ def ask_user_to_select_directory(directories):
     frame.pack(fill=tk.BOTH, expand=True, padx=(int(15*sf), int(5*sf)), pady=int(10*sf))
 
     # 提示文本
-    label = ttk.Label(frame, text="Multiple projects were found, please select:", font=("Segoe UI", 9), anchor="w")
+    label = ttk.Label(frame, text=LANGUAGES[current_language]['multiple_projects'], font=("Segoe UI", 9), anchor="w")
     label.pack(fill=tk.X)
 
     # 目录列表框
@@ -1040,10 +1044,10 @@ def ask_user_to_select_directory(directories):
     btn_frame = tk.Frame(frame)
     btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=int(15*sf), pady=int(3*sf))
 
-    cancel_btn = ttk.Button(btn_frame, text="Cancel", width=8, style="All.TButton", command=choice_win.destroy)
+    cancel_btn = ttk.Button(btn_frame, text=LANGUAGES[current_language]['cancel'], width=8, style="All.TButton", command=choice_win.destroy)
     cancel_btn.pack(side=tk.RIGHT, padx=0)
 
-    select_btn = ttk.Button(btn_frame, text="Select Project", width=12, style="All.TButton", command=on_select)
+    select_btn = ttk.Button(btn_frame, text=LANGUAGES[current_language]['select_project'], width=15, style="All.TButton", command=on_select)
     select_btn.pack(side=tk.RIGHT, padx=int(15*sf))
     select_btn.config(state=tk.DISABLED) # 默认禁用选择按钮
 
@@ -1053,15 +1057,15 @@ def ask_user_to_select_directory(directories):
 
 def close_result_list():
     """移除搜索结果"""
-    global result_frame, results_tree, window_expanded, thumbnail_check, thumbnail_win
+    global result_frame, results_tree, window_expanded, preview_check, preview_win
     if result_frame:
         results_tree.destroy()
         results_tree = None
         result_frame.destroy()
         result_frame = None
-        thumbnail_check.forget()
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.destroy()  # 关闭缩略图窗口
+        preview_check.forget()
+        if preview_win and preview_win.winfo_exists():
+            preview_win.destroy()  # 关闭预览窗口
         # 取反窗口扩展标志位，通过toggle_window_size()保持当前状态
         window_expanded = not window_expanded
         toggle_window_size()
@@ -1098,11 +1102,11 @@ def sort_treeview(col, columns):
 
 def show_result_list(result_files, search_type=None):
     """显示搜索结果"""
-    global result_frame, results_tree, thumbnail_check, thumbnail_win
+    global result_frame, results_tree, preview_check, preview_win
 
-    # 销毁原先的缩略图窗口
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.destroy()
+    # 销毁原先的预览窗口
+    if preview_win and preview_win.winfo_exists():
+        preview_win.destroy()
 
     # 如果没有搜索结果，移除搜索结果显示区域
     if not result_files:
@@ -1111,8 +1115,8 @@ def show_result_list(result_files, search_type=None):
             results_tree = None
             result_frame.destroy()
             result_frame = None
-            if 'thumbnail_check' in globals() and thumbnail_check:
-                thumbnail_check.forget()  # 如果没有搜索结果，隐藏 thumbnail_check
+            if 'preview_check' in globals() and preview_check:
+                preview_check.forget()  # 如果没有搜索结果，隐藏 preview_check
             if window_expanded:
                 root.geometry(f"{expand_window_width}x{window_height}")
             else:
@@ -1121,7 +1125,7 @@ def show_result_list(result_files, search_type=None):
 
     # 显示搜索结果数量
     count = len(result_files)
-    msg = f"{count} file{'s' if count!=1 else ''} found. Double-click to open."
+    msg = f"{count} {LANGUAGES[current_language]['file']}{'s' if count!=1 else ''} {LANGUAGES[current_language]['found_open']}"
 
     # 创建结果显示区域
     if result_frame:
@@ -1139,13 +1143,13 @@ def show_result_list(result_files, search_type=None):
     # 显示一个关闭按钮用来移除搜索结果
     close_btn = ttk.Button(tip_frame, text="❌", style="Close.TButton", width=3, command=close_result_list)
     close_btn.pack(padx=(0, int(16*sf)), pady=0, side=tk.RIGHT)
-    Tooltip(close_btn, lambda: "Remove search results list", delay=500)
+    Tooltip(close_btn, lambda: LANGUAGES[current_language]['remove_search_results'], delay=500)
 
-    # 如果是搜索pdf文件，就显示thumbnail_check按钮
-    if thumbnail_check and search_type in ("pdf", "lucky"):
-        thumbnail_check.pack(side=tk.LEFT, padx=int(20*sf))
+    # 如果是搜索pdf文件，就显示preview_check按钮
+    if preview_check and search_type in ("pdf", "lucky"):
+        preview_check.pack(side=tk.LEFT, padx=int(20*sf))
     else:
-        thumbnail_check.forget()
+        preview_check.forget()
 
     # 设置 Treeview 表头和行样式
     style = ttk.Style()
@@ -1154,15 +1158,15 @@ def show_result_list(result_files, search_type=None):
     style.map("Treeview", background=[('selected', '#347083')])
 
     # 添加 Treeview 控件显示结果
-    columns = ("File Name", "Created Time", "Path")
+    columns = (LANGUAGES[current_language]['file_name'], LANGUAGES[current_language]['created_time'], "Path")
     results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
     results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
     # 在 results_tree 上存储排序状态
     results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
     for col in columns:
         results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
-    results_tree.column("File Name", width=150, anchor="w")
-    results_tree.column("Created Time", width=135, anchor="w")
+    results_tree.column(LANGUAGES[current_language]['file_name'], width=150, anchor="w")
+    results_tree.column(LANGUAGES[current_language]['created_time'], width=135, anchor="w")
     results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列
 
     # 创建一个垂直滚动条并将其与 Treeview 关联
@@ -1190,14 +1194,14 @@ def show_result_list(result_files, search_type=None):
         entry.selection_range(0, tk.END)  # 选中所有文字
     results_tree.bind("<Escape>", focus_entry)
 
-    # 鼠标点击空白区域时清除选中项并关闭缩略图窗口
+    # 鼠标点击空白区域时清除选中项并关闭预览窗口
     def clear_selection_if_blank(event):
         # 判断用户点击的位置是否在有效的行上
         select_item = results_tree.identify_row(event.y)  # 获取点击位置的行 ID
         if not select_item:  # 如果没有行 ID，说明点击的是空白区域
             results_tree.selection_remove(results_tree.selection())  # 清除选中项
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.destroy()  # 关闭缩略图窗口
+            if preview_win and preview_win.winfo_exists():
+                preview_win.destroy()  # 关闭预览窗口
     results_tree.bind("<Button-1>", clear_selection_if_blank)
 
     # 动态调整窗口大小以显示结果
@@ -1214,7 +1218,6 @@ def show_result_list(result_files, search_type=None):
         results_tree.focus_set()
         results_tree.focus(first_item)
         results_tree.selection_set(first_item)
-        #results_tree.event_generate("<<TreeviewSelect>>")
 
 def on_right_click(event):
     """给 Treeview 添加右键菜单"""
@@ -1231,7 +1234,7 @@ def on_right_click(event):
     def open_file_right_menu():
         if os.path.exists(file_path):
             os.startfile(file_path)
-    menu.add_command(label="Open", command=open_file_right_menu)
+    menu.add_command(label=LANGUAGES[current_language]['open'], command=open_file_right_menu)
 
     # 打开文件所在目录并选中文件
     def open_file_location():
@@ -1239,7 +1242,7 @@ def on_right_click(event):
         if os.path.exists(folder):
             # 使用 explorer /select 来选中文件
             subprocess.run(["explorer", "/select,", file_path])
-    menu.add_command(label="Open File Location", command=open_file_location)
+    menu.add_command(label=LANGUAGES[current_language]['open_file_location'], command=open_file_location)
 
     menu.post(event.x_root, event.y_root)
 
@@ -1255,54 +1258,52 @@ def get_pdf_page_orientation(pdf_path):
         else:
             return "portrait", height, width
     except Exception as e:
-        show_warning_message(f"Unable to read PDF: {e}", "red")
+        show_warning_message(f"{LANGUAGES[current_language]['unable_pdf']}: {e}", "red")
         return None, None, None # 失败时返回None
 
-def generate_pdf_thumbnail(pdf_path, thumbnail_size=(220, 170)):
+def generate_pdf_preview(pdf_path, preview_size=(220, 170)):
     """生成 PDF 文件的缩略图，220x170是根据letter纸张比例设置"""
     try:
         doc = fitz.open(pdf_path)
         page = doc[0]  # 读取第一页
         pix = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5))  # 缩小 50% 生成更小的图片
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        img.thumbnail(thumbnail_size)  # 生成缩略图
+        img.thumbnail(preview_size)  # 生成缩略图供预览
         return ImageTk.PhotoImage(img)
     except Exception as e:
-        show_warning_message(f"Unable to generate thumbnail: {e}", "red")
+        show_warning_message(f"{LANGUAGES[current_language]['unable_preview']}: {e}", "red")
         return None
 
 def on_tree_select(event):
-    """当选中某个搜索结果时，如果是 PDF 文件，则在独立窗口显示缩略图"""
-    global thumbnail_win, results_tree, thumbnail_check, thumbnail_var, last_file
-
-    hide_warning_message()  # 清除警告信息
+    """当选中某个搜索结果时，如果是 PDF 文件，则在独立窗口显示预览"""
+    global preview_win, results_tree, preview_check, preview_var, last_file
 
     def close_window(event=None):
-        # 关闭缩略图窗口
-        global thumbnail_win
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.destroy()
-            thumbnail_win = None
+        # 关闭预览窗口
+        global preview_win
+        if preview_win and preview_win.winfo_exists():
+            preview_win.destroy()
+            preview_win = None
 
     selected_item = results_tree.selection()
     if not selected_item:
         return
-    # 如果复选框存在且未勾选，关闭缩略图显示并返回
-    if 'thumbnail_check' in globals() and thumbnail_check and not thumbnail_var.get():
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.destroy()
-            thumbnail_win = None
+    # 如果复选框存在且未勾选，关闭预览显示并返回
+    if 'preview_check' in globals() and preview_check and not preview_var.get():
+        if preview_win and preview_win.winfo_exists():
+            preview_win.destroy()
+            preview_win = None
         return
     file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
 
     # 如果点击的是同一个文件，不重复生成缩略图
     if last_file == file_path:
-        if thumbnail_win and thumbnail_win.winfo_exists():
+        if preview_win and preview_win.winfo_exists():
             return
     else:
         last_file = file_path
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.destroy()  # 销毁旧窗口
+        if preview_win and preview_win.winfo_exists():
+            preview_win.destroy()  # 销毁旧窗口
 
     if file_path.lower().endswith(".pdf"):
         orientation, width, height = get_pdf_page_orientation(file_path)  # 判断 PDF 方向，获取长宽数据
@@ -1314,77 +1315,78 @@ def on_tree_select(event):
         long_edge = int(width / 5 * sf)
         short_edge = int(height / 5 * sf)
         if orientation == "landscape":
-            thumbnail = generate_pdf_thumbnail(file_path, (long_edge, short_edge))
+            preview = generate_pdf_preview(file_path, (long_edge, short_edge))
         else:
-            thumbnail = generate_pdf_thumbnail(file_path, (short_edge, long_edge))
-        if thumbnail:
+            preview = generate_pdf_preview(file_path, (short_edge, long_edge))
+        if preview:
+            hide_warning_message()  # 清除警告信息
             # 创建一个新的独立窗口
-            thumbnail_win = tk.Toplevel(root)
-            thumbnail_win.configure(bg="orange")
-            thumbnail_win.overrideredirect(True)
+            preview_win = tk.Toplevel(root)
+            preview_win.configure(bg="orange")
+            preview_win.overrideredirect(True)
             if topmost_var.get():
-                # 如果主窗口置顶，缩略图窗口也置顶
-                thumbnail_win.attributes("-topmost", True)
+                # 如果主窗口置顶，预览窗口也置顶
+                preview_win.attributes("-topmost", True)
             # 根据纸张方向设置窗口的大小
             if orientation == "landscape":
-                thumbnail_win_width = long_edge + int(10*sf)
-                thumbnail_win_height = short_edge + int(10*sf)
+                preview_win_width = long_edge + int(10*sf)
+                preview_win_height = short_edge + int(10*sf)
             else:
-                thumbnail_win_width = short_edge + int(10*sf)
-                thumbnail_win_height = long_edge + int(10*sf)
-            thumbnail_win.geometry(f"{thumbnail_win_width}x{thumbnail_win_height}")  # 设置窗口大小
-            thumbnail_win.resizable(False, False)
+                preview_win_width = short_edge + int(10*sf)
+                preview_win_height = long_edge + int(10*sf)
+            preview_win.geometry(f"{preview_win_width}x{preview_win_height}")  # 设置窗口大小
+            preview_win.resizable(False, False)
 
-            # 显示缩略图
-            label = ttk.Label(thumbnail_win, image=thumbnail, anchor="center")
+            # 显示预览
+            label = ttk.Label(preview_win, image=preview, anchor="center")
             label.pack(padx=int(5*sf), pady=int(5*sf))
-            label.image = thumbnail  # 保持引用，防止被垃圾回收
+            label.image = preview  # 保持引用，防止被垃圾回收
             label.bind("<Double-1>", lambda event: open_file(file_path=file_path))  # 双击打开文件
 
-            # 用于关闭缩略图窗口的label
-            close_label = ttk.Label(thumbnail_win, text="✕", style="Close.TLabel")
+            # 用于关闭预览窗口的label
+            close_label = ttk.Label(preview_win, text="✕", style="Close.TLabel")
             close_label.place(relx=1.0, x=int(-5*sf), y=int(5*sf), anchor="ne")  # 右上角
             close_label.bind("<Button-1>", close_window)  # 绑定点击事件
 
-            # 缩略图窗口出现主窗口左侧
-            x = root.winfo_x() - thumbnail_win_width + int(7*sf)
+            # 预览窗口出现主窗口左侧
+            x = root.winfo_x() - preview_win_width + int(7*sf)
             y = root.winfo_y() + window_height + int(48*sf)
-            thumbnail_win.geometry(f"+{x}+{y}")
+            preview_win.geometry(f"+{x}+{y}")
         else:
             # 生成缩略图失败，重置 last_file
             last_file = None
     else:
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.destroy()  # 关闭缩略图窗口
+        if preview_win and preview_win.winfo_exists():
+            preview_win.destroy()  # 关闭预览窗口
 
 def on_main_window_move(event):
-    """当主窗口移动时，让 thumbnail_win 也随之移动"""
-    global thumbnail_win
-    if thumbnail_win and thumbnail_win.winfo_exists():
+    """当主窗口移动时，让 preview_win 也随之移动"""
+    global preview_win
+    if preview_win and preview_win.winfo_exists():
         # 计算新的位置
-        x = root.winfo_x() - thumbnail_win.winfo_width() + int(7*sf)
+        x = root.winfo_x() - preview_win.winfo_width() + int(7*sf)
         y = root.winfo_y() + window_height + int(48*sf)
-        thumbnail_win.geometry(f"+{x}+{y}")
+        preview_win.geometry(f"+{x}+{y}")
 
 def on_focus_in(event):
-    # 如果焦点在主窗口，调出缩略图窗口
-    global thumbnail_win
+    # 如果焦点在主窗口，调出预览窗口
+    global preview_win
     if root.state() != "iconic" and root.state() != "withdrawn":
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            if thumbnail_win.state() == "withdrawn":  # 当窗口被隐藏时重新显示
-                thumbnail_win.deiconify()
-            thumbnail_win.lift()  # 提升缩略图窗口到最前
+        if preview_win and preview_win.winfo_exists():
+            if preview_win.state() == "withdrawn":  # 当窗口被隐藏时重新显示
+                preview_win.deiconify()
+            preview_win.lift()  # 提升预览窗口到最前
 
 def on_window_state_change(event=None):
-    # 当窗口状态改变时，隐藏或显示缩略图窗口
-    global thumbnail_win
+    # 当窗口状态改变时，隐藏或显示预览窗口
+    global preview_win
     if root.state() == "iconic" or root.state() == "withdrawn":  # 窗口最小化或隐藏
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.withdraw()  # 隐藏缩略图窗口
+        if preview_win and preview_win.winfo_exists():
+            preview_win.withdraw()  # 隐藏预览窗口
     else:  # 窗口恢复
-        if thumbnail_win and thumbnail_win.winfo_exists():
-            thumbnail_win.deiconify()  # 显示缩略图窗口
-            thumbnail_win.lift()  # 提升缩略图窗口到最前
+        if preview_win and preview_win.winfo_exists():
+            preview_win.deiconify()  # 显示预览窗口
+            preview_win.lift()  # 提升预览窗口到最前
 
 def show_about():
     """自定义关于信息的窗口"""
@@ -1399,8 +1401,8 @@ def show_about():
     root.about_win = about_win  # 将窗口绑定到 root 的属性上
     about_win.withdraw()  # 先隐藏窗口
     about_win.attributes("-topmost", True)
-    about_win.title("About")
-    about_win_width = int(370*sf)
+    about_win.title(LANGUAGES[current_language]['about'])
+    about_win_width = int(375*sf)
     about_win_height = int(275*sf)
     about_win.geometry(f"{about_win_width}x{about_win_height}")
     about_win.resizable(False, False)
@@ -1448,12 +1450,10 @@ def show_about():
 
     # 文本内容
     about_text = [
-        f"Drawing Search - Version {ver}",
-        "\nThis is a mini-app for quickly accessing",
-        "drawings on BellatRx computers.",
-        "\nIf you have any questions or suggestions,",
-        "please feel free to contact me.",
-        "\nDeveloped by: Wei Tang",
+        f"Drawing Search - Version {ver}\n",
+        f"{LANGUAGES[current_language]['about_text_1']}\n",
+        f"{LANGUAGES[current_language]['about_text_2']}\n",
+        f"{LANGUAGES[current_language]['about_text_3']}",
     ]
 
     # 文本标签
@@ -1468,7 +1468,7 @@ def show_about():
     email_frame = tk.Frame(text_frame)
     email_frame.pack(anchor="w")
 
-    email_label = ttk.Label(email_frame, text="Email me", foreground="blue", cursor="hand2", font=("Segoe UI", 9, "underline"))
+    email_label = ttk.Label(email_frame, text=LANGUAGES[current_language]['email'], foreground="blue", cursor="hand2", font=("Segoe UI", 9, "underline"))
     email_label.pack(side=tk.LEFT, padx=0)
     email_label.bind("<Button-1>", lambda event: send_email())
 
@@ -1486,11 +1486,11 @@ def send_email():
     try:
         webbrowser.open("mailto:wtweitang@hotmail.com?subject=Drawing%20Search%20Feedback")
     except Exception as e:
-        messagebox.showerror("Error", f"Cannot open email client: {e}")
+        messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_email']}: {e}")
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, thumbnail_win, refresh_cache_click_count
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, preview_win, refresh_cache_click_count
 
     entry.focus()  # 保持焦点在输入框
 
@@ -1519,12 +1519,12 @@ def reset_window():
     # 隐藏刷新按钮，与窗口背景同色
     refresh_cache_label.config(foreground="#F0F0F0")
 
-    # 隐藏 thumbnail_check
-    thumbnail_check.forget()
+    # 隐藏 preview_check
+    preview_check.forget()
 
-    # 关闭缩略图窗口
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.destroy()
+    # 关闭预览窗口
+    if preview_win and preview_win.winfo_exists():
+        preview_win.destroy()
 
     # 清除上次搜索关键字记录
     last_query = None
@@ -1541,7 +1541,7 @@ def reset_window():
         result_frame = None
     root.geometry(f"{window_width}x{window_height}")  # 恢复初始窗口大小
     if window_expanded:
-        expand_btn.config(text="Quick Access   ❯❯")  # 改为 "❯❯"
+        expand_btn.config(text=f"{LANGUAGES[current_language]['quick']}   ❯❯")  # 改为 "❯❯"
         window_expanded = not window_expanded  # 切换状态
         if shortcut_frame:
             shortcut_frame.destroy()
@@ -1579,7 +1579,7 @@ def toggle_window_size():
         else:
             # 收缩窗口，隐藏快捷按钮框架
             root.geometry(f"{window_width}x{window_height}")  # 恢复到原始大小
-        expand_btn.config(text="Quick Access   ❯❯")  # 改为 "❯❯"
+        expand_btn.config(text=f"{LANGUAGES[current_language]['quick']}   ❯❯")  # 改为 "❯❯"
         if shortcut_frame:
             shortcut_frame.destroy()
             shortcut_frame = None
@@ -1591,7 +1591,7 @@ def toggle_window_size():
         else:
             # 扩展窗口，显示快捷按钮框架
             root.geometry(f"{expand_window_width}x{window_height}")  # 扩展窗口大小
-        expand_btn.config(text="Quick Access   ❮❮")  # 改为 "❮❮"
+        expand_btn.config(text=f"{LANGUAGES[current_language]['quick']}   ❮❮")  # 改为 "❮❮"
 
         # 先清空快捷按钮框架，防止从 mini 窗口切换回来时重复生成
         if shortcut_frame:
@@ -1632,9 +1632,9 @@ def toggle_topmost():
     entry.focus()  # 保持焦点在输入框
     is_checked = topmost_var.get()
     root.attributes("-topmost", is_checked)
-    # 如果缩略图窗口存在，也设置其置顶
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.attributes("-topmost", is_checked)
+    # 如果预览窗口存在，也设置其置顶
+    if preview_win and preview_win.winfo_exists():
+        preview_win.attributes("-topmost", is_checked)
 
 def create_entry_context_menu(entry_widget):
     # 为 Entry 小部件创建一个右键菜单
@@ -1651,9 +1651,9 @@ def create_entry_context_menu(entry_widget):
         entry_widget.event_generate("<<Paste>>")
 
     # 添加菜单项
-    context_menu.add_command(label="Copy", command=copy_text)
-    context_menu.add_command(label="Cut", command=cut_text)
-    context_menu.add_command(label="Paste", command=paste_text)
+    context_menu.add_command(label=LANGUAGES[current_language]['copy'], command=copy_text)
+    context_menu.add_command(label=LANGUAGES[current_language]['cut'], command=cut_text)
+    context_menu.add_command(label=LANGUAGES[current_language]['paste'], command=paste_text)
 
     # 绑定右键事件
     def show_context_menu(event):
@@ -1664,9 +1664,9 @@ def create_entry_context_menu(entry_widget):
 
 def open_mini_window():
     # 打开 mini 窗口
-    # 隐藏缩略图窗口
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.withdraw()
+    # 隐藏预览窗口
+    if preview_win and preview_win.winfo_exists():
+        preview_win.withdraw()
     # 隐藏主窗口
     root.withdraw()
     
@@ -1759,7 +1759,7 @@ def open_mini_window():
     clear_label_mini.bind("<Button-1>", clear_mini_entry)
 
     # 添加搜索按钮
-    search_btn_mini = ttk.Button(mini_frame, text="Search", width=10, style="All.TButton", command=on_search_mini)
+    search_btn_mini = ttk.Button(mini_frame, text=LANGUAGES[current_language]['search'], width=10, style="All.TButton", command=on_search_mini)
     search_btn_mini.pack(side="right", padx=int(5*sf))
 
     # 如果用户直接关闭 mini 窗口，则重新显示主窗口
@@ -1777,14 +1777,14 @@ def show_window(new_position_left, new_position_top, expanded_status):
         window_expanded = True
         toggle_window_size()
     root.deiconify()  # 显示root窗口
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.deiconify()  # 显示缩略图窗口
-        thumbnail_win.lift()
+    if preview_win and preview_win.winfo_exists():
+        preview_win.deiconify()  # 显示预览窗口
+        preview_win.lift()
     entry.focus_set()  # 设置焦点到输入框
 
 def on_root_close():
     # 关闭主窗口时清除所有未完成的线程
-    global thumbnail_win
+    global preview_win
     stop_event.set()  # 发送退出信号
 
     # 强制终止所有子线程。实际上这段代码可以不写，
@@ -1794,9 +1794,9 @@ def on_root_close():
         if thread is not threading.main_thread():
             thread.join(timeout=0.1)  # 等待 0.1 秒
 
-    # 关闭缩略图窗口
-    if thumbnail_win and thumbnail_win.winfo_exists():
-        thumbnail_win.destroy()
+    # 关闭预览窗口
+    if preview_win and preview_win.winfo_exists():
+        preview_win.destroy()
     root.destroy()  # 关闭窗口
 
 def clear_entry(event=None):
@@ -1819,6 +1819,55 @@ def debounce(func, delay=200):
         wrapper.after_id = root.after(delay, lambda: func(*args, **kwargs))
     return wrapper
 
+def detect_system_language():
+    """检测系统语言"""
+    try:
+        lang, _ = locale.getlocale()
+        # Windows 11里会得到English_Canada，French_Canada这样的格式
+        if lang:
+            return lang.split('_')[0][:2].lower() # 判断前两位小写，兼容旧版本的系统
+        else:
+            return "en"  # 如果无法获取语言，使用en作为默认值
+    except:
+        return "en"  # 如果获取语言失败，使用en作为默认值
+
+def switch_language(event=None):
+    """切换语言"""
+    global current_language, previous_language
+    if current_language == "en":
+        current_language = "fr"
+        previous_language = "en"
+        lang_label.config(text="En")
+        update_texts()
+    elif current_language == "fr":
+        current_language = "en"
+        previous_language = "fr"
+        lang_label.config(text="Fr")
+        update_texts()
+
+def update_texts():
+    """更新主窗口控件的文本"""
+    global default_parts_path, changed_parts_path
+    prompt_label.config(text=LANGUAGES[current_language]['input'])
+    search_btn.config(text=LANGUAGES[current_language]['search_pdf'])
+    lucky_btn.config(text=LANGUAGES[current_language]['lucky'])
+    search_3d_btn.config(text=LANGUAGES[current_language]['3d'])
+    search_cache_btn.config(text=LANGUAGES[current_language]['vault'])
+    reset_btn.config(text=LANGUAGES[current_language]['reset'])
+    if expand_btn.cget("text").endswith('❯❯'):
+        expand_btn.config(text=f"{LANGUAGES[current_language]['quick']}   ❯❯")
+    else:
+        expand_btn.config(text=f"{LANGUAGES[current_language]['quick']}   ❮❮")
+    if directory_label.cget("text").startswith(LANGUAGES[previous_language]['default_parts_dir']):
+        directory_label.config(text=f"{LANGUAGES[current_language]['default_parts_dir']} {default_parts_path}")
+    else:
+        directory_label.config(text=f"{LANGUAGES[current_language]['parts_dir']} {changed_parts_path}")
+    change_label.config(text=LANGUAGES[current_language]['change'])
+    default_label.config(text=LANGUAGES[current_language]['default'])
+    preview_check.config(text=LANGUAGES[current_language]['preview'])
+    create_entry_context_menu(entry) # 更新主窗口输入框的右键菜单语言
+
+
 # 创建主窗口
 try:
     # 适配系统缩放比例
@@ -1827,6 +1876,13 @@ try:
     sf = ScaleFactor/100
     tk_sf = sf*(96/72)
     
+    # 获取系统的默认语言
+    system_lang = detect_system_language()
+    if system_lang in ['fr', 'en']:
+        current_language = system_lang
+    else:
+        current_language = "en"  # 默认英语
+        
     root = tk.Tk()
     root.withdraw()  # 先隐藏窗口
     root.tk.call('tk', 'scaling', tk_sf)  # 设置tk的缩放比例,调整控件和字体大小
@@ -1854,14 +1910,6 @@ try:
     root.deiconify() # 显示窗口
     root.protocol("WM_DELETE_WINDOW", on_root_close)  # 绑定关闭事件，清除所有线程
     
-    # 第一行标签的框架
-    label_frame = tk.Frame(root)
-    label_frame.pack(pady=(int(15*sf), int(5*sf)), anchor="w", fill="x")
-
-    # 标签放在第一行
-    prompt_label = ttk.Label(label_frame, text="Input Part / Assembly / Project Number :", font=("Segoe UI", 9), anchor="w")
-    prompt_label.pack(side=tk.LEFT, padx=(int(20*sf), 0))
-
     # 创建ttk控件的 Style
     style = ttk.Style()
     style.configure("Top.TCheckbutton", font=("Segoe UI", 10)) 
@@ -1875,8 +1923,17 @@ try:
     style.configure("RefreshCache.TLabel", font=("Segoe UI", 12))
     style.configure("Tooltip.TLabel", background="#ffffe0")
     style.configure("Clear.TLabel", background="white")
-    style.configure("Thumbnail.TCheckbutton", font=("Segoe UI", 9))
+    style.configure("Preview.TCheckbutton", font=("Segoe UI", 9))
     style.configure("Close.TLabel", foreground="red", background="white", font=("Segoe UI", 9))
+    style.configure("Lang.TLabel", font=("Consolas", 9), background="lightblue")
+
+    # 第一行标签的框架
+    label_frame = tk.Frame(root)
+    label_frame.pack(pady=(int(15*sf), int(5*sf)), anchor="w", fill="x")
+
+    # 标签放在第一行
+    prompt_label = ttk.Label(label_frame, text=LANGUAGES[current_language]['input'], font=("Segoe UI", 9), anchor="w")
+    prompt_label.pack(side=tk.LEFT, padx=(int(20*sf), 0))
 
     # 添加置顶选项
     # 创建一个 IntVar 绑定复选框的状态（0 未选中，1 选中）
@@ -1885,13 +1942,13 @@ try:
     # 创建复选框，用于控制窗口置顶
     checkbox = ttk.Checkbutton(label_frame, text="📌", variable=topmost_var, style="Top.TCheckbutton", command=toggle_topmost)
     checkbox.pack(side=tk.RIGHT, padx=int(10*sf))
-    Tooltip(checkbox, lambda: "Pin to top", delay=500)
+    Tooltip(checkbox, lambda: LANGUAGES[current_language]['tip_top'], delay=500)
 
     # 添加切换mini窗口的按钮
     mini_search_label = ttk.Label(label_frame, text="🍀", font=("Segoe UI", 10), cursor="hand2")
     mini_search_label.pack(side=tk.RIGHT, padx=int(5*sf))
     mini_search_label.bind("<Button-1>", lambda event: open_mini_window())
-    Tooltip(mini_search_label, lambda: "Switch to mini window", delay=500)
+    Tooltip(mini_search_label, lambda: LANGUAGES[current_language]['tip_mini'], delay=500)
 
      # 按钮宽度，输入框宽度，Label宽度和位置，无法根据缩放比例在布局内进行同比例调整，所以指定具体值
     if ScaleFactor == 100:
@@ -1958,52 +2015,52 @@ try:
     button_frame.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
 
     # Search PDF 按钮
-    search_btn = ttk.Button(button_frame, text="Search PDF Drawing", width=btn_width, style="All.TButton", command=search_pdf_files)
+    search_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['search_pdf'], width=btn_width, style="All.TButton", command=search_pdf_files)
     search_btn.grid(row=0, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
-    Tooltip(search_btn, lambda: "Search for PDF files matching the entered keywords", delay=500)
+    Tooltip(search_btn, lambda: LANGUAGES[current_language]['tip_search_pdf'], delay=500)
 
     # I'm Feeling Lucky 按钮
-    lucky_btn = ttk.Button(button_frame, text="I'm Feeling Lucky!", style="All.TButton", width=btn_width, command=feeling_lucky)
+    lucky_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['lucky'], style="All.TButton", width=btn_width, command=feeling_lucky)
     lucky_btn.grid(row=0, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
-    Tooltip(lucky_btn, lambda: "Open the latest revision of the PDF drawing", delay=500)
+    Tooltip(lucky_btn, lambda: LANGUAGES[current_language]['tip_lucky'], delay=500)
 
     # Search 3D drawing 按钮
-    search_3d_btn = ttk.Button(button_frame, text="Search 3D Drawing", style="All.TButton", width=btn_width, command=search_3d_files)
+    search_3d_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['3d'], style="All.TButton", width=btn_width, command=search_3d_files)
     search_3d_btn.grid(row=1, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
-    Tooltip(search_3d_btn, lambda: "Search for 3D files (.iam/.ipt) matching the entered keywords", delay=500)
+    Tooltip(search_3d_btn, lambda: LANGUAGES[current_language]['tip_3d'], delay=500)
 
     # Search vault cache 按钮
-    search_cache_btn = ttk.Button(button_frame, text="Search in Vault Cache", style="All.TButton", width=btn_width, command=search_vault_cache)
+    search_cache_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['vault'], style="All.TButton", width=btn_width, command=search_vault_cache)
     search_cache_btn.grid(row=1, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
-    Tooltip(search_cache_btn, lambda: "Search 3D drawings (.iam/.ipt) from local Vault cache\rSupport searching by project name", delay=500)
+    Tooltip(search_cache_btn, lambda: LANGUAGES[current_language]['tip_vault'], delay=500)
 
     # Reset 按钮
-    reset_btn = ttk.Button(button_frame, text="Reset", width=btn_width, style="All.TButton", command=reset_window)
+    reset_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['reset'], width=btn_width, style="All.TButton", command=reset_window)
     reset_btn.grid(row=2, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
-    Tooltip(reset_btn, lambda: "Reset the window to default, stop the current search\rand clear search cache", delay=500)
+    Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
 
     # 扩展按钮
-    expand_btn = ttk.Button(button_frame, text="Quick Access   ❯❯", width=btn_width, style="All.TButton", command=toggle_window_size)
+    expand_btn = ttk.Button(button_frame, text=f"{LANGUAGES[current_language]['quick']}   ❯❯", width=btn_width, style="All.TButton", command=toggle_window_size)
     expand_btn.grid(row=2, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
-    Tooltip(expand_btn, lambda: "Shortcuts to frequently used folders and files", delay=500)
+    Tooltip(expand_btn, lambda: LANGUAGES[current_language]['tip_quick'], delay=500)
 
     # 显示默认目录及更改功能
     directory_frame = tk.Frame(root)
-    directory_frame.pack(anchor="w", padx=int(20*sf), pady=parts_y_position, fill="x")
-    directory_label = ttk.Label(directory_frame, text=f"Default PARTS Directory: {default_parts_path}", font=("Segoe UI", 8), width=parts_dir_width, anchor="w")
+    directory_frame.pack(anchor="w", padx=int(14*sf), pady=parts_y_position, fill="x")
+    directory_label = ttk.Label(directory_frame, text=f"{LANGUAGES[current_language]['default_parts_dir']} {default_parts_path}", font=("Segoe UI", 8), width=parts_dir_width, anchor="w")
     directory_label.pack(side=tk.LEFT)
     Tooltip(directory_label, lambda: directory_label.cget("text"), delay=500)
 
     # Change 按钮
-    change_label = ttk.Label(directory_frame, text="Change", style="Change.TLabel", cursor="hand2")
-    change_label.pack(side=tk.LEFT, padx=int(8*sf))
-    Tooltip(change_label, lambda: "Select a new PARTS directory", delay=500)
+    change_label = ttk.Label(directory_frame, text=LANGUAGES[current_language]['change'], style="Change.TLabel", cursor="hand2")
+    change_label.pack(side=tk.LEFT, padx=(0, int(8*sf)))
+    Tooltip(change_label, lambda: LANGUAGES[current_language]['tip_change'], delay=500)
     change_label.bind("<Button-1>", lambda event: update_directory())
 
     # Default 按钮
-    default_label = ttk.Label(directory_frame, text="Default", style="Change.TLabel", cursor="hand2")
+    default_label = ttk.Label(directory_frame, text=LANGUAGES[current_language]['default'], style="Change.TLabel", cursor="hand2")
     default_label.pack(side=tk.LEFT, padx=0)
-    Tooltip(default_label, lambda: "Reset the PARTS directory to default", delay=500)
+    Tooltip(default_label, lambda: LANGUAGES[current_language]['tip_default'], delay=500)
     default_label.bind("<Button-1>", lambda event: reset_to_default_directory())
 
     # About 按钮
@@ -2011,7 +2068,7 @@ try:
     about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
     about_label = ttk.Label(about_frame, text="ⓘ", style="About.TLabel", cursor="hand2")
     about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(8*sf)))
-    Tooltip(about_label, lambda: "About", delay=500)
+    Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
 
     # 添加刷新缓存标志
@@ -2023,8 +2080,8 @@ try:
         current_fg = str(refresh_cache_label.cget("foreground")).lower()  # 获取当前字体颜色，转为小写以统一比较
         if current_fg == "#f0f0f0":
             return ""  # 颜色为 #F0F0F0 时返回空字符串，不显示 Tooltip
-        return "Click repeatedly to refresh the cached directories"  # 其他颜色时显示提示
-    Tooltip(refresh_cache_label, get_refresh_tooltip, delay=500)
+        return LANGUAGES[current_language]['tip_refresh']  # 其他颜色时显示提示
+    Tooltip(refresh_cache_label, lambda: get_refresh_tooltip(), delay=500)
     refresh_cache_label.bind("<Button-1>", on_refresh_cache_click)
 
     # 显示缓存状态, 灰色无缓存，绿色缓存已完成，红色正在缓存
@@ -2033,13 +2090,22 @@ try:
     Tooltip(cache_label, get_cache_str, delay=500)
     cache_label.bind("<Button-1>", on_refresh_cache_click)  # 绑定点击刷新缓存函数，在点击该处时也能刷新缓存
 
-    # 添加 thumbnail_check 复选框
-    thumbnail_var = tk.BooleanVar(value=True)  # 默认选中
-    thumbnail_check = ttk.Checkbutton(
-        about_frame, text="Thumbnails", variable=thumbnail_var, style="Thumbnail.TCheckbutton", 
+    # 语言设置label
+    if current_language == "fr":
+        lang_label = ttk.Label(about_frame, text="En", style="Lang.TLabel", cursor="hand2")
+    else:
+        lang_label = ttk.Label(about_frame, text="Fr", style="Lang.TLabel", cursor="hand2")
+    lang_label.pack(side=tk.RIGHT, padx=int(20*sf), pady=(int(4*sf)))
+    Tooltip(lang_label, lambda: LANGUAGES[current_language]['language'], delay=500)
+    lang_label.bind("<Button-1>", switch_language)  # 点击切换语言
+
+    # 添加 preview_check 复选框
+    preview_var = tk.BooleanVar(value=True)  # 默认选中
+    preview_check = ttk.Checkbutton(
+        about_frame, text=LANGUAGES[current_language]['preview'], variable=preview_var, style="Preview.TCheckbutton", 
         command=lambda: (on_tree_select(None), entry.focus())
     )
-    Tooltip(thumbnail_check, lambda: "Show thumbnails", delay=500)
+    Tooltip(preview_check, lambda: LANGUAGES[current_language]['show_preview'], delay=500)
 
     # 运行主循环
     root.mainloop()
