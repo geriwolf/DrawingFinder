@@ -25,7 +25,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.7"  # 版本号
+ver = "1.3.8"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -184,7 +184,7 @@ def open_shortcut(index):
 def update_directory():
     """更新搜索目录"""
     global changed_parts_path, last_query
-    new_dir = filedialog.askdirectory(initialdir=default_parts_path, title="Darwing Search")
+    new_dir = filedialog.askdirectory(initialdir=default_parts_path, title="Darwing Finder")
     if new_dir:
         new_dir = new_dir.replace('/', '\\')  # 将路径中的斜杠替换为反斜杠
         directory_label.config(text=f"{LANGUAGES[current_language]['parts_dir']} {new_dir}")
@@ -1450,7 +1450,7 @@ def show_about():
 
     # 文本内容
     about_text = [
-        f"Drawing Search - Version {ver}\n",
+        f"Drawing Finder - Version {ver}\n",
         f"{LANGUAGES[current_language]['about_text_1']}\n",
         f"{LANGUAGES[current_language]['about_text_2']}\n",
         f"{LANGUAGES[current_language]['about_text_3']}",
@@ -1484,7 +1484,7 @@ def send_email():
     """打开默认邮件客户端发送邮件"""
     import webbrowser
     try:
-        webbrowser.open("mailto:wtweitang@hotmail.com?subject=Drawing%20Search%20Feedback")
+        webbrowser.open("mailto:wtweitang@hotmail.com?subject=Drawing%20Finder%20Feedback")
     except Exception as e:
         messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_email']}: {e}")
 
@@ -1703,7 +1703,7 @@ def open_mini_window():
     # 创建 mini 窗口
     mini_win = tk.Toplevel(root)
     mini_win.withdraw()  # 先隐藏窗口
-    mini_win.title("Drawing Search")
+    mini_win.title("Drawing Finder")
     mini_win_width = int(230*sf)
     mini_win_height = int(35*sf)
     mini_win.geometry(f"{mini_win_width}x{mini_win_height}")
@@ -1893,7 +1893,7 @@ try:
     icon = ImageTk.PhotoImage(icon_image)
     # 设置窗口图标
     root.iconphoto(True, icon)
-    root.title("Drawing Search")
+    root.title("Drawing Finder")
     # 绑定窗口事件
     root.bind("<Configure>", on_main_window_move)
     root.bind("<FocusIn>", debounce(on_focus_in))

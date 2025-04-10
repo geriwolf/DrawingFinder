@@ -1,9 +1,9 @@
 About
 -
-This is a mini application for quickly accessing drawings on BellatRx computers.
+This is a lightweight utility for quickly accessing drawings on BellatRx computers.
 
 Compile the file
 -
 ```python
-pyinstaller --onefile --windowed --icon=logo.ico DrawingSearch.py
+pyinstaller --onefile --noconsole --icon=logo.ico DrawingFinder.py
 ```
