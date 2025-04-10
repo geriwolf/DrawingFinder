@@ -611,8 +611,13 @@ def search_files_thread(query, search_directory, search_type):
 
         if stop_event.is_set():  # 检查停止标志并返回
             return
-        # pdf搜索结果排序（按创建时间倒序）
-        result_files_pdf.sort(key=lambda x: x[1], reverse=True)
+        # pdf搜索结果排序（根据搜索的关键字不同，进行不同排序）
+        if len(query) > 2 and query[2].isdigit():
+            # 如果是project number，按文件名正序排列，方便根据文件名查找
+            result_files_pdf.sort(key=lambda x: x[0])
+        else:
+            # 如果是part number或者assembly number，按创建时间倒序排列，方便查找最新的revision
+            result_files_pdf.sort(key=lambda x: x[1], reverse=True)
         # 3d文件搜索结果排序（按文件名排序）
         result_files_3d.sort(key=lambda x: x[0])
 
@@ -953,12 +958,7 @@ def search_vault_cache_thread(query, search_directory):
             root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['no_matching_3d_cache'], "red"))
         else:
             root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['not_latest'], "blue"))
-        if len(query) > 2 and query[2].isdigit():
-            # 如果是project number，按文件名正序排列
-            result_files.sort(key=lambda x: x[0])
-        else:
-            # 如果是part number或者assembly number，按创建时间倒序排列
-            result_files.sort(key=lambda x: x[1], reverse=True)
+            result_files.sort(key=lambda x: x[0])  # 搜索结果按文件名排序
 
         root.after(0, lambda: show_result_list(result_files))
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
