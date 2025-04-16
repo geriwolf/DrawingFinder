@@ -26,7 +26,7 @@ LANGUAGES = {
         "tip_refresh": "Click repeatedly to refresh the cached directories",
         "no_cache": "No cache",
         "cache_completed": "Cache completed:",
-        "cache_in_progress": "Caching in progress",
+        "cache_in_progress": "Caching in progress:",
         "language": "Passer en français",
         "preview": "Preview",
         "show_preview": "Show previews",
