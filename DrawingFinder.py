@@ -11,6 +11,9 @@ import ctypes
 import fitz  # PyMuPDF
 import subprocess
 import locale
+import urllib.request
+import json
+import webbrowser
 from tkinter import filedialog
 from tkinter import Menu, ttk
 from PIL import Image, ImageTk
@@ -25,7 +28,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.8"  # 版本号
+ver = "1.3.7"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -54,6 +57,7 @@ last_file = None # 用于记录上一次在预览窗口中打开的文件
 # 全局点击计数器，用于刷新缓存功能
 refresh_cache_click_count = 0
 refresh_cache_click_first_time = None
+release_url = "https://api.github.com/repos/geriwolf/DrawingFinder/releases/latest"
 # 快捷访问路径列表，存储按钮上显示的文字和对应路径
 shortcut_paths = [
     {"label": "PARTS Folder", "path": "K:\\PARTS"},
@@ -1403,7 +1407,7 @@ def show_about():
     about_win.attributes("-topmost", True)
     about_win.title(LANGUAGES[current_language]['about'])
     about_win_width = int(375*sf)
-    about_win_height = int(275*sf)
+    about_win_height = int(285*sf)
     about_win.geometry(f"{about_win_width}x{about_win_height}")
     about_win.resizable(False, False)
 
@@ -1417,7 +1421,7 @@ def show_about():
     # 窗口位置，跟随主窗口居中显示，不考虑Treeview高度
     about_win.update_idletasks()
     position_right = int(root.winfo_x() + root.winfo_width()/2 - about_win_width/2)
-    position_down = int(root.winfo_y() + window_height - about_win_height + 6)
+    position_down = int(root.winfo_y() + window_height - about_win_height + int(6*sf))
     about_win.geometry(f"+{position_right}+{position_down}")
     about_win.deiconify() # 显示窗口
     
@@ -1430,7 +1434,7 @@ def show_about():
 
     # 左侧图标区域
     icon_frame = tk.Frame(main_frame, width=100)
-    icon_frame.pack(side=tk.LEFT, fill=tk.Y, padx=int(15*sf))
+    icon_frame.pack(side=tk.LEFT, fill=tk.Y, padx=int(15*sf), pady=int(20*sf))
     
     try:
         # 解码Base64图标并调整大小
@@ -1450,7 +1454,7 @@ def show_about():
 
     # 文本内容
     about_text = [
-        f"Drawing Finder - Version {ver}\n",
+        f"Drawing Finder - Version {ver}",
         f"{LANGUAGES[current_language]['about_text_1']}\n",
         f"{LANGUAGES[current_language]['about_text_2']}\n",
         f"{LANGUAGES[current_language]['about_text_3']}",
@@ -1463,6 +1467,33 @@ def show_about():
         else:
             label = ttk.Label(text_frame, text=text, font=("Segoe UI", 9), anchor="w")
         label.pack(anchor="w", fill=tk.X)
+
+        if i == 0:
+            # 版本号之后插入占位 frame（用于显示更新信息）
+            update_frame = tk.Frame(text_frame, height=int(24*sf))
+            update_frame.pack(anchor="w", fill='x')
+            update_frame.pack_propagate(False)  # 固定高度占位
+
+    # 后台线程检查更新
+    def fetch_update():
+        latest_ver, download_url = check_for_updates()
+        if latest_ver and latest_ver != ver:
+            # 比较版本号
+            get_ver_parts = list(map(int, latest_ver.split('.')))
+            cur_ver_parts = list(map(int, ver.split('.')))
+            
+            # 对较短的版本号补充 0，以确保两者长度相同
+            length = max(len(get_ver_parts), len(cur_ver_parts))
+            get_ver_parts.extend([0] * (length - len(get_ver_parts)))
+            cur_ver_parts.extend([0] * (length - len(cur_ver_parts)))
+            
+            # 逐部分比较
+            for v1, v2 in zip(get_ver_parts, cur_ver_parts):
+                if v1 > v2:
+                    # 如果最新版本号大于当前版本号，显示更新提示
+                    about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
+
+    threading.Thread(target=fetch_update, daemon=True).start()
 
     # 邮箱按钮和地址
     email_frame = tk.Frame(text_frame)
@@ -1487,6 +1518,30 @@ def send_email():
         webbrowser.open("mailto:wtweitang@hotmail.com?subject=Drawing%20Finder%20Feedback")
     except Exception as e:
         messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_email']}: {e}")
+
+def check_for_updates():
+    """检查更新，返回最新版本号和下载链接"""
+    try:
+        with urllib.request.urlopen(release_url, timeout=10) as response:
+            data = json.load(response)
+            latest_ver = data["tag_name"].lstrip("v")  # 获取最新版本号，如"v1.3.9" -> "1.3.9"
+            # 获取匿名跳转链接（点击后 GitHub 会重定向到 CDN加速地址）
+            url = data["assets"][0]["url"]  # 获取资源链接
+            headers = {"Accept": "application/octet-stream"}  # 设置 Accept 头部
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req) as dl_response:
+                # 最终跳转的真实下载地址
+                download_url = dl_response.geturl()
+            return latest_ver, download_url
+    except Exception as e:
+        print(f"Update check failed: {e}")
+        return None, None
+
+def show_update_label(parent, latest_ver, download_url):
+    """显示新版本提示信息"""
+    update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['update_download']} v{latest_ver}", foreground="blue", cursor="hand2", font=("Segoe UI", 8, "italic underline"))
+    update_label.pack(anchor="w", fill='x')
+    update_label.bind("<Button-1>", lambda e: webbrowser.open(download_url))
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""

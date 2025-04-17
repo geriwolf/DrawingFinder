@@ -76,7 +76,7 @@ LANGUAGES = {
         "copy": "Copy",
         "paste": "Paste",
         "search": "Search",
-        "parts_folder": "PARTS folder",
+        "update_download": "Update available, click to download",
     },
     "fr": {
         "input": "N° Pièce / Assemblage / Projet :",
@@ -154,6 +154,6 @@ LANGUAGES = {
         "copy": "Copier",
         "paste": "Coller",
         "search": "Rechercher",
-        "parts_folder": "Dossier PARTS",
+        "update_download": "Télécharger la nouvelle version",
     }
 }
