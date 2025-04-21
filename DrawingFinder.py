@@ -28,7 +28,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.9"  # 版本号
+ver = "1.3.10"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -38,6 +38,7 @@ results_tree = None  # 搜索结果的 Treeview 控件
 result_files_pdf = None  # 存储pdf搜索结果
 result_files_3d = None  # 存储3d文件iam和ipt搜索结果
 last_query = None  # 上一次的搜索结果
+history_frame = None  # 用于显示搜索历史的 Frame
 history_listbox = None  # 用于显示搜索历史的列表框
 window_expanded = False  # 设置标志位，表示窗口是否已经扩展
 window_width = 345
@@ -149,7 +150,7 @@ def hide_warning_message():
 
 def open_shortcut(index):
     """打开快捷访问的路径或文件"""
-    entry.focus() # 焦点重新回到输入框
+    entry_focus()  # 焦点重新回到输入框
     path = shortcut_paths[index]["path"]
 
     if os.path.exists(path):
@@ -242,13 +243,17 @@ def save_search_history(query):
 
 def show_search_history(event):
     """在输入框下显示搜索历史"""
-    global history_listbox
+    global history_listbox, history_frame
 
     # 如果存在旧的列表框，先销毁它
     if history_listbox:
         history_listbox.destroy()
+    if history_frame:
+        history_frame.destroy()
 
     query = entry.get().lower()
+    if search_hint.cget("text") != LANGUAGES[current_language]['enter_search']:
+        search_hint.config(text=LANGUAGES[current_language]['enter_search'])
     if not query:
         matching_history = search_history
     else:
@@ -261,28 +266,73 @@ def show_search_history(event):
         if matching_history[0].lower() == query.lower():
             return
 
-    # 创建列表框
-    history_listbox = tk.Listbox(root, height=min(len(matching_history), 5))
+    # 创建一个 Frame 包含 Listbox 和 Scrollbar
+    history_frame = tk.Frame(
+        root,
+        bd=0,
+        relief="solid",
+        highlightthickness=1,
+        highlightbackground="SystemHighlight",  # 蓝色边框（未聚焦）
+        highlightcolor="SystemHighlight",       # 蓝色边框（聚焦时）
+        bg="white"
+    )
+
+    border_thickness = 1  # 边框厚度
+
+    def get_listbox_height_width(root, rows, columns):
+        # 用临时 Listbox 获取高度和宽度的像素值
+        test = tk.Listbox(root, height=rows, width=columns)
+        test.place(x=-1000, y=-1000)
+        root.update_idletasks()
+        height = test.winfo_height()
+        width = test.winfo_width()
+        test.destroy()
+        return height, width
+
+    row_number = min(len(matching_history), 5)  # 最多显示5条记录
+    height_px, width_px = get_listbox_height_width(root, row_number, 12)  # 获取listbox高度和宽度
+    # 创建 Listbox
+    history_listbox = tk.Listbox(history_frame)
+    history_listbox.place(x=0, y=0, width=width_px, height=height_px)
+
+    # 如果搜索历史记录超过5条，添加滚动条
+    if len(matching_history) > 5:
+        # 创建垂直滚动条
+        scrollbar = tk.Scrollbar(history_frame, orient=tk.VERTICAL, command=history_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        history_listbox.config(yscrollcommand=scrollbar.set)
+        scrollbar_width = 17  # 滚动条宽度
+    else:
+        scrollbar_width = 0  # 没有滚动条时宽度为0
+       
     for item in matching_history:
         history_listbox.insert(0, item) # 最新的搜索记录显示在列表最上面
 
     # 获取输入框的绝对位置
     # 因为entry放置在entry_frame中，所以需要计算相对位置，用entry获取x坐标，用entry_frame获取y坐标
+    # 放置整体 Frame
     x = entry.winfo_x()
-    y = entry_frame.winfo_y() + entry.winfo_height()
+    # entry在entry_frame中往下偏移了5px，为了使listbox的蓝色边框与entry的边框重叠，这里使用了4px
+    y = entry_frame.winfo_y() + int(4*sf) + entry.winfo_height()
+    history_frame.place(x=x, y=y, width=width_px + int(scrollbar_width*sf) + border_thickness * 2, height=height_px + border_thickness * 2)
 
-    # 放置列表框
-    history_listbox.place(x=x, y=y, width=entry.winfo_width())
+    # 绑定点击事件
     history_listbox.bind("<ButtonRelease-1>", lambda event: select_history(event, history_listbox))
 
 def hide_history(event):
     """点击窗口其他部分时隐藏搜索历史"""
-    global history_listbox
+    global history_listbox, history_frame
+
     if history_listbox:
-        widget = event.widget
-        if widget != entry and widget != history_listbox:
+        clicked_widget = event.widget
+        # 如果点击的不是 Entry 且不是 Listbox 或 Scrollbar，就隐藏
+        if clicked_widget not in (entry, history_listbox) and not str(clicked_widget).startswith(str(history_frame)):
             history_listbox.destroy()
             history_listbox = None
+            if 'history_frame' in globals() and history_frame:
+                history_frame.destroy()
+                history_frame = None
+
 
 def select_history(event, listbox):
     """当选择历史记录时，填充到输入框并销毁列表框"""
@@ -295,9 +345,12 @@ def select_history(event, listbox):
     entry.focus_set()  # 重新聚焦到输入框
 
     # 销毁列表框
-    global history_listbox
+    global history_listbox, history_frame
     history_listbox.destroy()
     history_listbox = None
+    if 'history_frame' in globals() and history_frame:
+        history_frame.destroy()
+        history_frame = None
 
 def disable_search_button():
     """禁用所有搜索按钮"""
@@ -656,8 +709,17 @@ def search_files_thread(query, search_directory, search_type):
 
 def search_pdf_files():
     """执行pdf搜索"""
-    global last_query
-    entry.focus()  # 保持焦点在输入框
+    global last_query, history_listbox, history_frame
+
+    # 当敲回车执行搜索时，隐藏搜索历史列表
+    if history_listbox:
+        history_listbox.destroy()
+        history_listbox = None
+    if history_frame:
+        history_frame.destroy()
+        history_frame = None
+
+    entry_focus()  # 保持焦点在输入框
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
@@ -678,7 +740,7 @@ def search_pdf_files():
 def feeling_lucky():
     """执行feeling lucky搜索"""
     global last_query
-    entry.focus()  # 保持焦点在输入框
+    entry_focus()  # 保持焦点在输入框
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
@@ -701,7 +763,7 @@ def feeling_lucky():
 def search_3d_files():
     """执行3d文件搜索"""
     global last_query
-    entry.focus()  # 保持焦点在输入框
+    entry_focus()  # 保持焦点在输入框
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
@@ -722,7 +784,7 @@ def search_3d_files():
 def search_vault_cache():
     """搜索Vault缓存目录下的 3D 文件(ipt或者iam)"""
     global last_query
-    entry.focus()  # 保持焦点在输入框
+    entry_focus()  # 保持焦点在输入框
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
@@ -1004,6 +1066,7 @@ def ask_user_to_select_directory(directories):
     choice_win.resizable(False, False)
 
     # 窗口位置，跟随主窗口初始大小居中显示，方便鼠标选取
+    root.update_idletasks()  # 刷新主窗口状态
     choice_win.update_idletasks()
     position_right = int(root.winfo_x() + window_width/2 - choice_win_width/2)
     position_down = int(root.winfo_y() + window_height/2 - choice_win_height/2)
@@ -1130,6 +1193,7 @@ def show_result_list(result_files, search_type=None):
     # 显示搜索结果数量
     count = len(result_files)
     msg = f"{count} {LANGUAGES[current_language]['file']}{'s' if count!=1 else ''} {LANGUAGES[current_language]['found_open']}"
+    search_hint.config(text=LANGUAGES[current_language]['esc_return'])
 
     # 创建结果显示区域
     if result_frame:
@@ -1194,7 +1258,7 @@ def show_result_list(result_files, search_type=None):
 
     # 绑定键盘事件，按下 ESC 键时让 Entry 获得焦点
     def focus_entry(event=None):
-        entry.focus()  # 让 Entry 获得焦点
+        entry_focus()  # 让 Entry 获得焦点
         entry.selection_range(0, tk.END)  # 选中所有文字
     results_tree.bind("<Escape>", focus_entry)
 
@@ -1290,6 +1354,8 @@ def on_tree_select(event):
             preview_win = None
 
     selected_item = results_tree.selection()
+    if search_hint.cget("text") != LANGUAGES[current_language]['esc_return']:
+        search_hint.config(text=LANGUAGES[current_language]['esc_return'])
     if not selected_item:
         return
     # 如果复选框存在且未勾选，关闭预览显示并返回
@@ -1352,9 +1418,10 @@ def on_tree_select(event):
             close_label.place(relx=1.0, x=int(-5*sf), y=int(5*sf), anchor="ne")  # 右上角
             close_label.bind("<Button-1>", close_window)  # 绑定点击事件
 
+            root.update_idletasks()  # 刷新主窗口状态
             # 预览窗口出现主窗口左侧
-            x = root.winfo_x() - preview_win_width + int(7*sf)
-            y = root.winfo_y() + window_height + int(48*sf)
+            x = root.winfo_rootx() - preview_win_width - int(1*sf)  # 特意与主窗口左侧边框留出1px间距，不紧贴边框更好看一些
+            y = root.winfo_rooty() + window_height + int(18*sf)
             preview_win.geometry(f"+{x}+{y}")
         else:
             # 生成缩略图失败，重置 last_file
@@ -1368,8 +1435,8 @@ def on_main_window_move(event):
     global preview_win
     if preview_win and preview_win.winfo_exists():
         # 计算新的位置
-        x = root.winfo_x() - preview_win.winfo_width() + int(7*sf)
-        y = root.winfo_y() + window_height + int(48*sf)
+        x = root.winfo_rootx() - preview_win.winfo_width() - int(1*sf)
+        y = root.winfo_rooty() + window_height + int(18*sf)
         preview_win.geometry(f"+{x}+{y}")
 
 def on_focus_in(event):
@@ -1394,7 +1461,7 @@ def on_window_state_change(event=None):
 
 def show_about():
     """自定义关于信息的窗口"""
-    entry.focus()  # 保持焦点在输入框
+    entry_focus()  # 保持焦点在输入框
     if hasattr(root, 'about_win') and root.about_win.winfo_exists():
         # 如果窗口已经打开，就返回
         root.about_win.lift()  # 如果存在，提升窗口到最前
@@ -1414,11 +1481,12 @@ def show_about():
     # 窗口关闭时重置标志位
     def on_close():
         del root.about_win  # 删除引用
-        about_win.destroy()  
+        about_win.destroy()
 
     about_win.protocol("WM_DELETE_WINDOW", on_close)
 
     # 窗口位置，跟随主窗口居中显示，不考虑Treeview高度
+    root.update_idletasks()  # 刷新主窗口状态
     about_win.update_idletasks()
     position_right = int(root.winfo_x() + root.winfo_width()/2 - about_win_width/2)
     position_down = int(root.winfo_y() + window_height - about_win_height + int(6*sf))
@@ -1475,9 +1543,9 @@ def show_about():
             update_frame.pack_propagate(False)  # 固定高度占位
 
     # 后台线程检查更新
-    def fetch_update():
+    def fetch_update(about_win, update_frame):
         latest_ver, download_url = check_for_updates()
-        if latest_ver and latest_ver != ver:
+        if latest_ver:
             # 比较版本号
             get_ver_parts = list(map(int, latest_ver.split('.')))
             cur_ver_parts = list(map(int, ver.split('.')))
@@ -1490,10 +1558,17 @@ def show_about():
             # 逐部分比较
             for v1, v2 in zip(get_ver_parts, cur_ver_parts):
                 if v1 > v2:
-                    # 如果最新版本号大于当前版本号，显示更新提示
-                    about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
+                    # 如果最新版本号大于当前版本号，提示更新
+                    # 显示更新信息前先判断about窗口是否还存在，如果用户已经关闭了，就不显示
+                    if about_win.winfo_exists() and update_frame.winfo_exists():
+                        about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
+                    break
+            else:
+                # 检查完版本号三个字段都没有大于的情况，说明已经是最新版本
+                if about_win.winfo_exists() and update_frame.winfo_exists():
+                    about_win.after(0, lambda: show_update_label(update_frame, None, None))
 
-    threading.Thread(target=fetch_update, daemon=True).start()
+    threading.Thread(target=lambda: fetch_update(about_win, update_frame), daemon=True).start()
 
     # 邮箱按钮和地址
     email_frame = tk.Frame(text_frame)
@@ -1510,6 +1585,7 @@ def show_about():
     style.configure("AboutOK.TButton", font=("Segoe UI", 9), padding=(5, 5))
     ok_button = ttk.Button(about_win, text="OK", style="AboutOK.TButton", command=on_close)
     ok_button.pack(padx=int(15*sf), pady=int(15*sf), side=tk.RIGHT)
+    ok_button.focus()
 
 def send_email():
     """打开默认邮件客户端发送邮件"""
@@ -1538,16 +1614,23 @@ def check_for_updates():
         return None, None
 
 def show_update_label(parent, latest_ver, download_url):
-    """显示新版本提示信息"""
-    update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['update_download']} v{latest_ver}", foreground="blue", cursor="hand2", font=("Segoe UI", 8, "italic underline"))
+    """显示版本提示信息"""
+    if latest_ver:
+        # 有新版本
+        update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['update_download']} v{latest_ver}", foreground="blue", cursor="hand2", font=("Segoe UI", 8, "italic underline"))
+        update_label.bind("<Button-1>", lambda e: webbrowser.open(download_url))
+    else:
+        # 已经是最新版本
+        update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['already_latest']}", foreground="green", font=("Segoe UI", 8, "italic"))
+
     update_label.pack(anchor="w", fill='x')
-    update_label.bind("<Button-1>", lambda e: webbrowser.open(download_url))
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, preview_win, refresh_cache_click_count
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, preview_win, refresh_cache_click_count, last_input
 
-    entry.focus()  # 保持焦点在输入框
+    last_input = ""
+    entry_focus()  # 保持焦点在输入框
 
     # 触发停止事件
     stop_event.set()
@@ -1625,7 +1708,7 @@ def toggle_window_size():
     """切换窗口大小和按钮文本，并动态显示快捷访问按钮"""
     global window_expanded, shortcut_frame, result_frame
 
-    entry.focus()  # 保持焦点在输入框
+    entry_focus()  # 保持焦点在输入框
     if window_expanded:
         # 如果已有搜索结果，保持显示搜索结果
         if result_frame:
@@ -1684,7 +1767,7 @@ def center_window(root, width, height):
 
 def toggle_topmost():
     # 根据复选框的状态设置窗口是否置顶
-    entry.focus()  # 保持焦点在输入框
+    entry_focus()  # 保持焦点在输入框
     is_checked = topmost_var.get()
     root.attributes("-topmost", is_checked)
     # 如果预览窗口存在，也设置其置顶
@@ -1743,7 +1826,7 @@ def open_mini_window():
     def update_label_color_mini(event=None):
         # 判断输入框内容是否为空
         if mini_entry.get():
-            clear_label_mini.place(in_=mini_entry, relx=1.0, rely=0.5, anchor='e', x=int(-10*sf))  # 显示 X
+            clear_label_mini.place(in_=mini_entry, relx=1.0, rely=0.5, anchor='e', x=int(-3*sf))  # 显示 X
         else:
             clear_label_mini.place_forget()  # 空内容时，隐藏 X`
 
@@ -1769,6 +1852,7 @@ def open_mini_window():
     # 绑定mini窗口焦点事件
     mini_win.bind('<FocusIn>', on_focus_in)  # 窗口获得焦点时触发
     mini_win.bind('<FocusOut>', on_focus_out)  # 窗口失去焦点时触发
+    mini_win.bind("<Alt-m>", lambda event: on_close())
 
     # 设置窗口图标（复用主窗口图标）
     mini_win.iconphoto(True, icon)
@@ -1808,7 +1892,7 @@ def open_mini_window():
     clear_label_mini = ttk.Label(mini_entry, text="✕", font=('Segoe UI', 9), foreground='red', style="Clear.TLabel", cursor="arrow")
     # 监听 mini Entry 内容变化来更新 Label 的颜色， 同时实时更新匹配历史
     mini_entry.bind("<KeyRelease>", lambda event: (update_label_color_mini(event)))
-    mini_entry.bind("<FocusIn>", update_label_color_mini)     # 当 mini Entry 获取焦点时检查内容
+    mini_entry.bind("<FocusIn>", update_label_color_mini)  # 当 mini Entry 获取焦点时检查内容
 
     # 绑定点击事件：点击 Label 的 X 就清空 Entry
     clear_label_mini.bind("<Button-1>", clear_mini_entry)
@@ -1856,15 +1940,21 @@ def on_root_close():
 
 def clear_entry(event=None):
     # 清空输入框内容
+    global last_input
+    entry.focus()
     entry.delete(0, tk.END)  # 清空输入框内容
+    last_input = None
     clear_label.place_forget()  # 清空后，隐藏 X
+    search_hint.place_forget()  # 隐藏回车搜索提示
 
-def update_label_color(event=None):
+def show_entry_label(event=None):
     # 判断输入框内容是否为空
     if entry.get():
-        clear_label.place(in_=entry, relx=1.0, rely=0.5, anchor='e', x=int(-10*sf))  # 显示 X
+        clear_label.place(in_=entry, relx=1.0, rely=0.5, anchor='e', x=int(-3*sf))  # 显示 X 删除按钮
+        search_hint.place(in_=entry, relx=1.0, rely=0.5, anchor="e", x=int(-30*sf))  # 显示回车搜索提示
     else:
         clear_label.place_forget()  # 空内容时，隐藏 X
+        search_hint.place_forget()  # 隐藏回车搜索提示
 
 def debounce(func, delay=200):
     """装饰器函数，用于防抖"""
@@ -1921,7 +2011,16 @@ def update_texts():
     default_label.config(text=LANGUAGES[current_language]['default'])
     preview_check.config(text=LANGUAGES[current_language]['preview'])
     create_entry_context_menu(entry) # 更新主窗口输入框的右键菜单语言
+    if search_hint.cget("text") == LANGUAGES["en"]['enter_search'] or search_hint.cget("text") == LANGUAGES["fr"]['enter_search']:
+        search_hint.config(text=LANGUAGES[current_language]['enter_search'])
+    else:
+        search_hint.config(text=LANGUAGES[current_language]['esc_return'])
 
+def entry_focus():
+    # 焦点回到输入框，并重置回车搜索的提示
+    entry.focus()
+    if search_hint.cget("text") != LANGUAGES[current_language]['enter_search']:
+        search_hint.config(text=LANGUAGES[current_language]['enter_search'])
 
 # 创建主窗口
 try:
@@ -1978,6 +2077,7 @@ try:
     style.configure("RefreshCache.TLabel", font=("Segoe UI", 12))
     style.configure("Tooltip.TLabel", background="#ffffe0")
     style.configure("Clear.TLabel", background="white")
+    style.configure("Enter.TLabel", background="white", font=("Segoe UI", 9))
     style.configure("Preview.TCheckbutton", font=("Segoe UI", 9))
     style.configure("Close.TLabel", foreground="red", background="white", font=("Segoe UI", 9))
     style.configure("Lang.TLabel", font=("Consolas", 9), background="lightblue")
@@ -1998,12 +2098,18 @@ try:
     checkbox = ttk.Checkbutton(label_frame, text="📌", variable=topmost_var, style="Top.TCheckbutton", command=toggle_topmost)
     checkbox.pack(side=tk.RIGHT, padx=int(10*sf))
     Tooltip(checkbox, lambda: LANGUAGES[current_language]['tip_top'], delay=500)
+    def toggle_topmost_hotkey():
+        # 快捷键无法直接改变checkbox状态，需要手动切换
+        topmost_var.set(not topmost_var.get())
+        toggle_topmost()
+    root.bind("<Alt-t>", lambda event: toggle_topmost_hotkey())
 
     # 添加切换mini窗口的按钮
     mini_search_label = ttk.Label(label_frame, text="🍀", font=("Segoe UI", 10), cursor="hand2")
     mini_search_label.pack(side=tk.RIGHT, padx=int(5*sf))
     mini_search_label.bind("<Button-1>", lambda event: open_mini_window())
     Tooltip(mini_search_label, lambda: LANGUAGES[current_language]['tip_mini'], delay=500)
+    root.bind("<Alt-m>", lambda event: open_mini_window())
 
      # 按钮宽度，输入框宽度，Label宽度和位置，无法根据缩放比例在布局内进行同比例调整，所以指定具体值
     if ScaleFactor == 100:
@@ -2046,13 +2152,27 @@ try:
     create_entry_context_menu(entry)
     entry.focus()
     entry.bind("<Return>", lambda event: search_pdf_files())
+    entry.bind("<Escape>", lambda event: (entry.selection_range(0, tk.END), entry.focus_set()))
     entry.bind("<Button-1>", show_search_history)  # 点击输入框时显示历史记录
 
     # 清除 Entry 内容的Label，初始不显示
     clear_label = ttk.Label(entry_frame, text="✕", font=('Segoe UI', 10), foreground='red', style="Clear.TLabel", cursor="arrow")
+    # 回车搜索的提示，初始不显示
+    search_hint = ttk.Label(entry_frame, text=LANGUAGES[current_language]['enter_search'], foreground="gray", style="Enter.TLabel")
+    
     # 监听 Entry 内容变化来更新 Label 的颜色， 同时实时更新匹配历史
-    entry.bind("<KeyRelease>", lambda event: (show_search_history(event), update_label_color(event)))
-    entry.bind("<FocusIn>", update_label_color)     # 当 Entry 获取焦点时检查内容
+    last_input = None
+    def key_release(event=None):
+        global last_input
+        current_input = entry.get().lower()
+        if current_input != last_input:
+            # 键盘事件后对比输入框的内容，如果产生变化，就显示历史记录，避免使用快捷键时也触发显示
+            show_search_history(event)
+            show_entry_label(event)
+            last_input = current_input
+
+    entry.bind("<KeyRelease>", key_release)
+    entry.bind("<FocusIn>", show_entry_label)  # 当 Entry 获取焦点时根据内容决定是否显示回车搜索和清除label
 
     # 绑定点击事件：点击 Label 的 X 就清空 Entry
     clear_label.bind("<Button-1>", clear_entry)
@@ -2073,31 +2193,37 @@ try:
     search_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['search_pdf'], width=btn_width, style="All.TButton", command=search_pdf_files)
     search_btn.grid(row=0, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(search_btn, lambda: LANGUAGES[current_language]['tip_search_pdf'], delay=500)
+    root.bind("<Alt-p>", lambda event: search_pdf_files())
 
     # I'm Feeling Lucky 按钮
     lucky_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['lucky'], style="All.TButton", width=btn_width, command=feeling_lucky)
     lucky_btn.grid(row=0, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(lucky_btn, lambda: LANGUAGES[current_language]['tip_lucky'], delay=500)
+    root.bind("<Alt-l>", lambda event: feeling_lucky())
 
     # Search 3D drawing 按钮
     search_3d_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['3d'], style="All.TButton", width=btn_width, command=search_3d_files)
     search_3d_btn.grid(row=1, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(search_3d_btn, lambda: LANGUAGES[current_language]['tip_3d'], delay=500)
+    root.bind("<Alt-d>", lambda event: search_3d_files())
 
     # Search vault cache 按钮
     search_cache_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['vault'], style="All.TButton", width=btn_width, command=search_vault_cache)
     search_cache_btn.grid(row=1, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(search_cache_btn, lambda: LANGUAGES[current_language]['tip_vault'], delay=500)
+    root.bind("<Alt-v>", lambda event: search_vault_cache())
 
     # Reset 按钮
     reset_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['reset'], width=btn_width, style="All.TButton", command=reset_window)
     reset_btn.grid(row=2, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
+    root.bind("<Alt-r>", lambda event: reset_window())
 
     # 扩展按钮
     expand_btn = ttk.Button(button_frame, text=f"{LANGUAGES[current_language]['quick']}   ❯❯", width=btn_width, style="All.TButton", command=toggle_window_size)
     expand_btn.grid(row=2, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(expand_btn, lambda: LANGUAGES[current_language]['tip_quick'], delay=500)
+    root.bind("<Alt-q>", lambda event: toggle_window_size())
 
     # 显示默认目录及更改功能
     directory_frame = tk.Frame(root)
@@ -2125,6 +2251,7 @@ try:
     about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(8*sf)))
     Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
+    root.bind("<Alt-a>", lambda event: show_about())
 
     # 添加刷新缓存标志
     # 先设置与窗口背景同色隐藏刷新标志，等有缓存完成后再显示
@@ -2153,12 +2280,13 @@ try:
     lang_label.pack(side=tk.RIGHT, padx=int(20*sf), pady=(int(4*sf)))
     Tooltip(lang_label, lambda: LANGUAGES[current_language]['language'], delay=500)
     lang_label.bind("<Button-1>", switch_language)  # 点击切换语言
+    root.bind("<Alt-s>", lambda event: switch_language())
 
     # 添加 preview_check 复选框
     preview_var = tk.BooleanVar(value=True)  # 默认选中
     preview_check = ttk.Checkbutton(
         about_frame, text=LANGUAGES[current_language]['preview'], variable=preview_var, style="Preview.TCheckbutton", 
-        command=lambda: (on_tree_select(None), entry.focus())
+        command=lambda: (on_tree_select(None), entry_focus())
     )
     Tooltip(preview_check, lambda: LANGUAGES[current_language]['show_preview'], delay=500)
 
