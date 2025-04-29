@@ -70,6 +70,7 @@ shortcut_paths = [
 ]
 
 class Tooltip:
+    """显示鼠标悬停提示的类"""
     def __init__(self, widget, get_text_callback, delay=500, movedelay=16):
         self.widget = widget
         self.get_text_callback = get_text_callback  # 动态获取文字
@@ -134,6 +135,54 @@ class Tooltip:
             x = event.x_root + int(10*sf)
             y = event.y_root + int(10*sf)
             self.tooltip_window.wm_geometry(f"+{x}+{y}")
+
+class SearchAnimation:
+    """搜索时显示动画的类"""
+    def __init__(self, parent, width=60, height=20):
+        self.canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, bg="white")
+        self.radius = int(3*sf)  # 圆的半径
+        self.width = width
+        self.height = height
+        self.x = self.radius + 1  # 初始x坐标
+        self.oval = self.canvas.create_oval(
+            self.x - self.radius, height // 2 - self.radius,
+            self.x + self.radius, height // 2 + self.radius,
+            fill="blue", outline=""
+        )
+        self.direction = 1
+        self.running = False
+
+    def start(self):
+        if self.running:
+            return  # 防止重复启动动画
+        self.running = True
+        # 注意：你要在调用前确保 search_hint 已经定义
+        x = search_hint.winfo_x() + search_hint.winfo_width() - self.canvas.winfo_reqwidth() - 2
+        y = search_hint.winfo_y() + (search_hint.winfo_height() - self.canvas.winfo_reqheight()) // 2
+        self.canvas.place(x=x, y=y)
+        self.animate()
+
+    def animate(self):
+        if not self.running:
+            return
+
+        # 获取当前坐标
+        x1, _, x2, _ = self.canvas.coords(self.oval)
+        step = 2
+        # 计算圆心的位置
+        center_x = (x1 + x2) / 2
+        # 自动边界限制（确保圆点不会超出 canvas 左右）
+        if center_x - self.radius <= 0 or center_x + self.radius >= self.width:
+            self.direction *= -1
+
+        self.canvas.move(self.oval, self.direction * step, 0)
+        self.canvas.after(30, self.animate)
+
+    def stop(self):
+        if not self.running:
+            return
+        self.running = False
+        self.canvas.place_forget()
 
 def show_warning_message(message, color):
     """在输入框下方显示警告信息"""
@@ -252,7 +301,7 @@ def show_search_history(event):
         history_frame.destroy()
 
     query = entry.get().lower()
-    if search_hint.cget("text") != LANGUAGES[current_language]['enter_search']:
+    if search_hint.cget("text") != LANGUAGES[current_language]['enter_search'] and not search_anim.running:
         search_hint.config(text=LANGUAGES[current_language]['enter_search'])
     if not query:
         matching_history = search_history
@@ -358,6 +407,9 @@ def disable_search_button():
     lucky_btn.config(state=tk.DISABLED)
     search_3d_btn.config(state=tk.DISABLED)
     search_cache_btn.config(state=tk.DISABLED)
+    search_hint.config(text="")  # 清空文字
+    root.update_idletasks()  # 更新界面
+    search_anim.start()  # 启动动画
 
 def enable_search_button():
     """启用所有搜索按钮"""
@@ -365,6 +417,10 @@ def enable_search_button():
     lucky_btn.config(state=tk.NORMAL)
     search_3d_btn.config(state=tk.NORMAL)
     search_cache_btn.config(state=tk.NORMAL)
+    search_anim.stop()  # 停止动画
+    if entry.get() and result_frame is None:
+        # 如果输入框有内容且没有搜索结果，显示回车搜索的提示信息
+        search_hint.config(text=LANGUAGES[current_language]['enter_search'])
 
 def build_directory_cache_thread(search_directory):
     """
@@ -1951,7 +2007,11 @@ def show_entry_label(event=None):
     # 判断输入框内容是否为空
     if entry.get():
         clear_label.place(in_=entry, relx=1.0, rely=0.5, anchor='e', x=int(-3*sf))  # 显示 X 删除按钮
-        search_hint.place(in_=entry, relx=1.0, rely=0.5, anchor="e", x=int(-30*sf))  # 显示回车搜索提示
+        if len(entry.get()) < 14:
+            # 小于14个字符时显示回车搜索提示，超过时隐藏
+            search_hint.place(in_=entry, relx=1.0, rely=0.5, anchor="e", x=int(-20*sf))  # 显示回车搜索提示
+        else:
+            search_hint.place_forget()
     else:
         clear_label.place_forget()  # 空内容时，隐藏 X
         search_hint.place_forget()  # 隐藏回车搜索提示
@@ -2114,7 +2174,7 @@ try:
      # 按钮宽度，输入框宽度，Label宽度和位置，无法根据缩放比例在布局内进行同比例调整，所以指定具体值
     if ScaleFactor == 100:
         btn_width = 21
-        entry_width = 27
+        entry_width = 25
         parts_dir_width = 33
         parts_y_position = int(5*sf-3)
     elif ScaleFactor == 125:
@@ -2124,7 +2184,7 @@ try:
         parts_y_position = int(5*sf)
     elif ScaleFactor == 150:
         btn_width = 19
-        entry_width = 26
+        entry_width = 25
         parts_dir_width = 35
         parts_y_position = int(5*sf+5)
     elif ScaleFactor == 175:
@@ -2134,12 +2194,12 @@ try:
         parts_y_position = int(5*sf+10)
     elif ScaleFactor == 200:
         btn_width = 20
-        entry_width = 26
+        entry_width = 25
         parts_dir_width = 38
         parts_y_position = int(5*sf+14)
     else:
         btn_width = 20
-        entry_width = 26
+        entry_width = 25
         parts_dir_width = 35
         # 对于大于200的缩放比例，进行特殊处理，使最后一行始终位于窗口底部
         parts_y_position = int(5*sf+(sf*100-125)/25*5)
@@ -2147,7 +2207,7 @@ try:
     # 创建输入框框架
     entry_frame = tk.Frame(root)
     entry_frame.pack(pady=0, anchor="w", fill="x")
-    entry = ttk.Entry(entry_frame, width=entry_width, font=("Segoe UI", 16))
+    entry = ttk.Entry(entry_frame, width=entry_width, font=("Consolas", 16, "bold"))
     entry.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
     create_entry_context_menu(entry)
     entry.focus()
@@ -2159,7 +2219,8 @@ try:
     clear_label = ttk.Label(entry_frame, text="✕", font=('Segoe UI', 10), foreground='red', style="Clear.TLabel", cursor="arrow")
     # 回车搜索的提示，初始不显示
     search_hint = ttk.Label(entry_frame, text=LANGUAGES[current_language]['enter_search'], foreground="gray", style="Enter.TLabel")
-    
+    search_anim = SearchAnimation(search_hint.master)  # 动画效果
+
     # 监听 Entry 内容变化来更新 Label 的颜色， 同时实时更新匹配历史
     last_input = None
     def key_release(event=None):
