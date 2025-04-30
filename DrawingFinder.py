@@ -28,7 +28,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.11"  # 版本号
+ver = "1.3.12"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -138,15 +138,16 @@ class Tooltip:
 
 class SearchAnimation:
     """搜索时显示动画的类"""
-    def __init__(self, parent, width=60, height=20):
-        self.canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, bg="white")
-        self.radius = int(3*sf)  # 圆的半径
-        self.width = width
-        self.height = height
-        self.x = self.radius + 1  # 初始x坐标
+    def __init__(self, parent, width=35, height=20, radius=3):
+        self.radius = int(radius*sf)  # 圆的半径随屏幕缩放比例调整
+        self.width = int(width*sf)  # 宽度随屏幕缩放比例调整
+        self.height = height  # 高度固定
+        self.canvas = tk.Canvas(parent, width=self.width, height=self.height, highlightthickness=0, bg="white")
+        self.x = self.radius + 1  # 初始x坐标，不紧贴左边缘，留出1px的间隙
+        # 创建一个圆形的 Canvas 作为动画元素
         self.oval = self.canvas.create_oval(
-            self.x - self.radius, height // 2 - self.radius,
-            self.x + self.radius, height // 2 + self.radius,
+            self.x - self.radius, self.height // 2 - self.radius,
+            self.x + self.radius, self.height // 2 + self.radius,
             fill="blue", outline=""
         )
         self.direction = 1
@@ -156,9 +157,9 @@ class SearchAnimation:
         if self.running:
             return  # 防止重复启动动画
         self.running = True
-        # 注意：你要在调用前确保 search_hint 已经定义
-        x = search_hint.winfo_x() + search_hint.winfo_width() - self.canvas.winfo_reqwidth() - 2
-        y = search_hint.winfo_y() + (search_hint.winfo_height() - self.canvas.winfo_reqheight()) // 2
+        # search_hint 已在主函数定义
+        x = search_hint.winfo_x() + search_hint.winfo_width() - self.canvas.winfo_reqwidth() - 5  # canvas布局向左偏移5px，不贴边
+        y = search_hint.winfo_y() + (search_hint.winfo_height() - self.canvas.winfo_reqheight()) // 2  # 垂直居中
         self.canvas.place(x=x, y=y)
         self.animate()
 
@@ -168,11 +169,13 @@ class SearchAnimation:
 
         # 获取当前坐标
         x1, _, x2, _ = self.canvas.coords(self.oval)
-        step = 2
+        step = int(2*sf)  # 每次移动的步长，随屏幕缩放比例调整
         # 计算圆心的位置
         center_x = (x1 + x2) / 2
-        # 自动边界限制（确保圆点不会超出 canvas 左右）
-        if center_x - self.radius <= 0 or center_x + self.radius >= self.width:
+        # 计算下一帧中心位置
+        next_center_x = center_x + self.direction * step
+        # 如果下一帧将超出边界，就改方向
+        if next_center_x - self.radius < 0 or next_center_x + self.radius > self.width:
             self.direction *= -1
 
         self.canvas.move(self.oval, self.direction * step, 0)
@@ -254,25 +257,11 @@ def reset_to_default_directory():
 
 def open_file(event=None, file_path=None):
     """用系统默认程序打开选中的文件"""
-    if not file_path:  # 如果没有传入路径，则尝试从 Treeview 中获取
-        if event and event.widget == results_tree:  # 确保事件来自 results_tree
-            # 如果是鼠标事件，优先使用鼠标点击的行
-            if hasattr(event, 'y'):  # 检查是否有 y 属性
-                click_item = results_tree.identify_row(event.y)  # 获取鼠标点击的行
-                if click_item:
-                    selected_item = [click_item]  # 将点击的行作为选中项
-                else:
-                    selected_item = results_tree.selection()  # 如果没有点击项，则使用当前选中项
-            else:
-                # 键盘事件，直接使用当前选中项
-                selected_item = results_tree.selection()
-        else:
+    if not file_path:
+        selected_item = results_tree.selection()  # 获取选中的项
+        if not selected_item or not results_tree.exists(selected_item[0]):
             return
-
-        if selected_item and results_tree.exists(selected_item[0]):  # 确保有选中项且存在
-            file_path = results_tree.item(selected_item[0], 'values')[2]  # 获取完整文件路径
-        else:
-            return
+        file_path = results_tree.item(selected_item[0], 'values')[2]  # 获取文件路径
 
     if file_path and os.path.exists(file_path):
         try:
@@ -1924,7 +1913,7 @@ def open_mini_window():
     mini_frame.pack(pady=int(5*sf))
 
     # 在框架中添加一个输入框
-    mini_entry = ttk.Entry(mini_frame, font=("Segoe UI", 12), width=13)
+    mini_entry = ttk.Entry(mini_frame, font=("Consolas", 12), width=13)
     mini_entry.pack(side="left", pady=0, padx=int(5*sf))
     create_entry_context_menu(mini_entry)
     mini_entry.focus()
@@ -2207,7 +2196,7 @@ try:
     # 创建输入框框架
     entry_frame = tk.Frame(root)
     entry_frame.pack(pady=0, anchor="w", fill="x")
-    entry = ttk.Entry(entry_frame, width=entry_width, font=("Consolas", 16, "bold"))
+    entry = ttk.Entry(entry_frame, width=entry_width, font=("Consolas", 16))
     entry.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
     create_entry_context_menu(entry)
     entry.focus()
