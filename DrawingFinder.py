@@ -28,7 +28,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.12"  # 版本号
+ver = "1.3.13"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1374,8 +1374,8 @@ def get_pdf_page_orientation(pdf_path):
         show_warning_message(f"{LANGUAGES[current_language]['unable_pdf']}: {e}", "red")
         return None, None, None # 失败时返回None
 
-def generate_pdf_preview(pdf_path, preview_size=(220, 170)):
-    """生成 PDF 文件的缩略图，220x170是根据letter纸张比例设置"""
+def generate_pdf_preview(pdf_path, preview_size=(330, 255)):
+    """生成 PDF 文件的缩略图，330x255是根据letter纸张比例设置"""
     try:
         doc = fitz.open(pdf_path)
         page = doc[0]  # 读取第一页
@@ -1430,8 +1430,16 @@ def on_tree_select(event):
         long_edge = int(width / 5 * sf)
         short_edge = int(height / 5 * sf)
         if orientation == "landscape":
+            # 横向
+            if short_edge > 255:
+                short_edge = 255  # 限制高度最大为255，防止缩略图过大
+                long_edge = int(short_edge * width / height)
             preview = generate_pdf_preview(file_path, (long_edge, short_edge))
         else:
+            # 纵向
+            if long_edge > 255:
+                long_edge = 255  # 限制高度最大为255，防止缩略图过大
+                short_edge = int(long_edge * height / width)
             preview = generate_pdf_preview(file_path, (short_edge, long_edge))
         if preview:
             hide_warning_message()  # 清除警告信息
