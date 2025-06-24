@@ -19,6 +19,7 @@ from tkinter import Menu, ttk
 from PIL import Image, ImageTk
 from logo import ICON_BASE64
 from language import LANGUAGES
+from partname_util import generate_partname_dat
 
 try:
     import tkinter as tk
@@ -28,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.3.13"  # 版本号
+ver = "1.4.0"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -37,6 +38,7 @@ result_frame = None  # 搜索结果的 Frame 容器
 results_tree = None  # 搜索结果的 Treeview 控件
 result_files_pdf = None  # 存储pdf搜索结果
 result_files_3d = None  # 存储3d文件iam和ipt搜索结果
+result_files_name = None  # 存储partname搜索结果
 last_query = None  # 上一次的搜索结果
 history_frame = None  # 用于显示搜索历史的 Frame
 history_listbox = None  # 用于显示搜索历史的列表框
@@ -187,7 +189,7 @@ class SearchAnimation:
         self.running = False
         self.canvas.place_forget()
 
-def show_warning_message(message, color):
+def show_warning_message(message, color="blue"):
     """在输入框下方显示警告信息"""
     global warning_label
     if warning_label is None:
@@ -261,15 +263,23 @@ def open_file(event=None, file_path=None):
         selected_item = results_tree.selection()  # 获取选中的项
         if not selected_item or not results_tree.exists(selected_item[0]):
             return
-        file_path = results_tree.item(selected_item[0], 'values')[2]  # 获取文件路径
+        # 判断results_tree的列数，获取默认文件路径
+        if len(results_tree["columns"]) == 3:
+            file_path = results_tree.item(selected_item[0], 'values')[2]  # 获取文件路径
+        elif len(results_tree["columns"]) == 6:
+            values = results_tree.item(selected_item[0], 'values')
+            file_path = values[2] or values[3] or values[4]
+            if not file_path:
+                show_warning_message(LANGUAGES[current_language]['no_drawing_open'], "red")
+                return
 
     if file_path and os.path.exists(file_path):
         try:
             os.startfile(file_path)
         except Exception as e:
-            messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_to_open_file']}: {e}")
+            show_warning_message(f"{LANGUAGES[current_language]['failed_to_open_file']}: {e}", "red")
     else:
-        messagebox.showerror(LANGUAGES[current_language]['error'], LANGUAGES[current_language]['file_not_found'])
+        show_warning_message(f"{LANGUAGES[current_language]['file_not_found']}: {file_path}", "red")
 
 def save_search_history(query):
     """保存搜索记录并限制最多保存20条"""
@@ -396,6 +406,7 @@ def disable_search_button():
     lucky_btn.config(state=tk.DISABLED)
     search_3d_btn.config(state=tk.DISABLED)
     search_cache_btn.config(state=tk.DISABLED)
+    search_partname_btn.config(state=tk.DISABLED)
     search_hint.config(text="")  # 清空文字
     root.update_idletasks()  # 更新界面
     search_anim.start()  # 启动动画
@@ -406,6 +417,7 @@ def enable_search_button():
     lucky_btn.config(state=tk.NORMAL)
     search_3d_btn.config(state=tk.NORMAL)
     search_cache_btn.config(state=tk.NORMAL)
+    search_partname_btn.config(state=tk.NORMAL)
     search_anim.stop()  # 停止动画
     if entry.get() and result_frame is None:
         # 如果输入框有内容且没有搜索结果，显示回车搜索的提示信息
@@ -1167,6 +1179,154 @@ def ask_user_to_select_directory(directories):
     choice_win.wait_window()
     return selected_dir[0]
 
+def search_partname():
+    """根据关键字搜索part name， part name的数据存在于JSON文件partname.dat中"""
+    global last_query
+    # 获取程序的路径
+    if getattr(sys, 'frozen', False):
+        # 打包后的 .exe 环境
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    else:
+        # 正常调试环境（解释器运行）
+        base_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前脚本所在目录
+    
+    # 生成partname.dat的完整路径
+    partname_dat = os.path.join(base_dir, "partname.dat")
+
+    # 如果partname.dat不存在，后台生成
+    if not os.path.exists(partname_dat):
+        gen_partname()
+    else:
+        # 进行part name搜索处理        
+        entry_focus()  # 保持焦点在输入框
+        disable_search_button() # 禁用搜索按钮
+        hide_warning_message()  # 清除警告信息
+        query = entry.get().strip().lower() # 去除首尾空格
+        if not query:
+            show_warning_message(LANGUAGES[current_language]['enter_number'], "red")
+            enable_search_button() # 启用搜索按钮
+            return
+        
+        # 检查是否包含非法字符
+        if any(char in query for char in "*.?+^$[]{}|\\()"):
+            show_warning_message(LANGUAGES[current_language]['invalid_characters'], "red")
+            enable_search_button() # 启用搜索按钮
+            return
+
+        save_search_history(query)  # 保存搜索记录
+        last_query = None
+
+        # 执行搜索
+        show_warning_message(LANGUAGES[current_language]['searching'], "red")
+        query = query.lower()
+
+        stop_event.clear()  # 确保上一次的停止信号被清除
+        search_thread = threading.Thread(target=search_partname_thread, args=(query, partname_dat), daemon=True)
+        search_thread.start()
+
+def search_partname_thread(query, partname_dat):
+    """使用多线程读取part name数据文件并搜索"""
+    global active_threads, result_files_name
+
+    # 获取当前线程并添加到活动线程集合中
+    thread = threading.current_thread()
+    active_threads.add(thread)
+
+    try:
+        if "*" in query or "." in query:
+            # 只有包含通配符才使用正则
+            regex_pattern = re.compile(query, re.IGNORECASE)
+            match_func = lambda file: regex_pattern.search(file)
+        else:
+            query = query.lower()
+            match_func = lambda file: query in file.lower()
+        
+        if not hasattr(search_partname, "data"):
+            print("aaaaa")
+            with open(partname_dat, "r", encoding="utf-8") as f:
+                search_partname.data = json.load(f)
+        else:
+            print("bbbbb")
+        
+        result_files_name = []
+        # 遍历partname.dat中的数据，查找匹配的part name
+        for item in search_partname.data.values():
+            if stop_event.is_set():  # 检查停止标志并返回
+                return
+            id_ = item.get("id", "")
+            description = item.get("description", "")
+            if query in id_.lower() or query in description.lower():
+                pdf = item.get("pdf", "")
+                ipt = item.get("ipt", "")
+                iam = item.get("iam", "")
+
+                # 根据drawing类型生成对应字符串用于在结果中显示
+                drawing = []
+                if pdf: drawing.append("PDF")
+                if ipt: drawing.append("IPT")
+                if iam: drawing.append("IAM")
+                drawing_type = ", ".join(drawing)
+
+                result_files_name.append([
+                    id_,
+                    description,
+                    pdf,
+                    ipt,
+                    iam,
+                    drawing_type
+                ])
+
+        if stop_event.is_set():  # 检查停止标志并返回
+            return
+        
+        root.after(0, hide_warning_message)  # 使用主线程清除警告信息
+
+        if not result_files_name:
+            root.after(0, lambda: show_warning_message(LANGUAGES[current_language]['no_matching_name'], "red"))
+        else:
+            hide_warning_message()
+        
+        # 显示搜索结果
+        root.after(0, lambda: show_result_list(result_files_name, search_type="name"))
+        root.after(0, lambda: enable_search_button())  # 启用搜索按钮
+
+    except Exception as e:
+        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
+
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
+
+def gen_partname():
+    """后台生成 partname.dat"""
+    thread_name = "gen_partname_thread"
+
+    def on_done():
+        hide_warning_message()  # 隐藏生成中提示
+        messagebox.showinfo("Part Name", LANGUAGES[current_language]['partname_generated'])
+
+    def run():
+        try:
+            generate_partname_dat(callback=on_done)
+        finally:
+            active_threads.discard(thread)
+
+    # 检查是否已有线程在运行
+    if any(t.name == thread_name for t in active_threads):
+        show_warning_message(LANGUAGES[current_language]['partname_generating'], "blue")
+        return
+
+    # 提示用户第一次搜索Part Name，没有part name数据文件，将在后台生成
+    answer = messagebox.askokcancel(
+        f"{LANGUAGES[current_language]['first_partname_1']}",
+        f"{LANGUAGES[current_language]['first_partname_2']}\n\n"
+        f"{LANGUAGES[current_language]['first_partname_3']}"
+    )
+    if answer:
+        thread = threading.Thread(target=run, daemon=True)
+        thread.name = thread_name
+        active_threads.add(thread)
+        thread.start()
+
 def close_result_list():
     """移除搜索结果"""
     global result_frame, results_tree, window_expanded, preview_check, preview_win
@@ -1237,7 +1397,7 @@ def show_result_list(result_files, search_type=None):
 
     # 显示搜索结果数量
     count = len(result_files)
-    msg = f"{count} {LANGUAGES[current_language]['file']}{'s' if count!=1 else ''} {LANGUAGES[current_language]['found_open']}"
+    msg = f"{count} {LANGUAGES[current_language]['item']}{'s' if count!=1 else ''} {LANGUAGES[current_language]['found_open']}"
     search_hint.config(text=LANGUAGES[current_language]['esc_return'])
 
     # 创建结果显示区域
@@ -1252,14 +1412,14 @@ def show_result_list(result_files, search_type=None):
     tip_frame.pack(padx=0, pady=0, fill="x")
     # 搜索结果数量
     tip_label = ttk.Label(tip_frame, text=msg, font=("Segoe UI", 9), foreground="blue")
-    tip_label.pack(padx=int(20*sf), pady=0, side=tk.LEFT)
+    tip_label.pack(padx=(int(20*sf), 0), pady=0, side=tk.LEFT)
     # 显示一个关闭按钮用来移除搜索结果
     close_btn = ttk.Button(tip_frame, text="❌", style="Close.TButton", width=3, command=close_result_list)
     close_btn.pack(padx=(0, int(16*sf)), pady=0, side=tk.RIGHT)
     Tooltip(close_btn, lambda: LANGUAGES[current_language]['remove_search_results'], delay=500)
 
     # 如果是搜索pdf文件，就显示preview_check按钮
-    if preview_check and search_type in ("pdf", "lucky"):
+    if preview_check and search_type in ("pdf", "lucky", "name"):
         preview_check.pack(side=tk.LEFT, padx=int(20*sf))
     else:
         preview_check.forget()
@@ -1271,16 +1431,33 @@ def show_result_list(result_files, search_type=None):
     style.map("Treeview", background=[('selected', '#347083')])
 
     # 添加 Treeview 控件显示结果
-    columns = (LANGUAGES[current_language]['file_name'], LANGUAGES[current_language]['created_time'], "Path")
-    results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
-    results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
-    # 在 results_tree 上存储排序状态
-    results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
-    for col in columns:
-        results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
-    results_tree.column(LANGUAGES[current_language]['file_name'], width=150, anchor="w")
-    results_tree.column(LANGUAGES[current_language]['created_time'], width=135, anchor="w")
-    results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列
+    if search_type == "name":
+        # 如果是part name搜索，显示part name相关信息
+        columns = (LANGUAGES[current_language]['part_no'], LANGUAGES[current_language]['name'], "PDF", "IPT", "IAM", LANGUAGES[current_language]['drawing'])
+        results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
+        results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
+        # 在 results_tree 上存储排序状态
+        results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
+        for col in columns:
+            results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
+        results_tree.column(LANGUAGES[current_language]['part_no'], width=90, anchor="w")
+        results_tree.column(LANGUAGES[current_language]['name'], width=200, anchor="w")
+        # 设置PDF、IPT、IAM列宽为0，隐藏这些列
+        results_tree.column("PDF", width=0, stretch=tk.NO)
+        results_tree.column("IPT", width=0, stretch=tk.NO)
+        results_tree.column("IAM", width=0, stretch=tk.NO)
+        results_tree.column(LANGUAGES[current_language]['drawing'], width=100, anchor="w")
+    else:
+        columns = (LANGUAGES[current_language]['file_name'], LANGUAGES[current_language]['created_time'], "Path")
+        results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
+        results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
+        # 在 results_tree 上存储排序状态
+        results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
+        for col in columns:
+            results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
+        results_tree.column(LANGUAGES[current_language]['file_name'], width=150, anchor="w")
+        results_tree.column(LANGUAGES[current_language]['created_time'], width=135, anchor="w")
+        results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列
 
     # 创建一个垂直滚动条并将其与 Treeview 关联
     scrollbar = ttk.Scrollbar(result_frame, orient=tk.VERTICAL, command=results_tree.yview)
@@ -1289,7 +1466,11 @@ def show_result_list(result_files, search_type=None):
     # 插入搜索结果
     for index, item in enumerate(result_files):
         tag = 'evenrow' if index % 2 == 0 else 'oddrow'
-        results_tree.insert("", tk.END, values=(item[0], item[1], item[2]), tags=(tag,))
+        if search_type == "name":
+            # 如果是part name搜索，插入part name相关信息
+            results_tree.insert("", tk.END, values=(item[0], item[1], item[2], item[3], item[4], item[5]), tags=(tag,))
+        else:
+            results_tree.insert("", tk.END, values=(item[0], item[1], item[2]), tags=(tag,))
     
     results_tree.tag_configure('evenrow', background='#E6F7FF')
     results_tree.tag_configure('oddrow', background='white')
@@ -1338,24 +1519,58 @@ def on_right_click(event):
     if not item:
         return
     
-    results_tree.selection_set(item)
-    file_path = results_tree.item(item, 'values')[2]
-    
     menu = Menu(results_tree, tearoff=0)
 
-    # 打开文件
-    def open_file_right_menu():
-        if os.path.exists(file_path):
-            os.startfile(file_path)
-    menu.add_command(label=LANGUAGES[current_language]['open'], command=open_file_right_menu)
+    results_tree.selection_set(item)
+    # 根据results_tree的列数，添加不同的右键菜单选项
+    # 如果是pdf或者3d搜索，添加打开文件和打开文件所在目录的选项
+    # 如果是part name搜索，添加打开PDF、IPT、IAM文件的选项
+    if len(results_tree["columns"]) == 3:
+        file_path = results_tree.item(item, 'values')[2]
+        # 打开文件
+        def open_file_right_menu():
+            if os.path.exists(file_path):
+                os.startfile(file_path)
+            else:
+                show_warning_message(f"{LANGUAGES[current_language]['file_not_found']}: {file_path}", "red")
+        menu.add_command(label=LANGUAGES[current_language]['open'], command=open_file_right_menu)
 
-    # 打开文件所在目录并选中文件
-    def open_file_location():
-        folder = os.path.dirname(file_path)
-        if os.path.exists(folder):
-            # 使用 explorer /select 来选中文件
-            subprocess.run(["explorer", "/select,", file_path])
-    menu.add_command(label=LANGUAGES[current_language]['open_file_location'], command=open_file_location)
+        # 打开文件所在目录并选中文件
+        def open_file_location():
+            folder = os.path.dirname(file_path)
+            if os.path.exists(folder):
+                # 使用 explorer /select 来选中文件
+                subprocess.run(["explorer", "/select,", file_path])
+        menu.add_command(label=LANGUAGES[current_language]['open_file_location'], command=open_file_location)
+    elif len(results_tree["columns"]) == 6:
+        # 如果是part name搜索，添加打开PDF、IPT、IAM的选项
+        pdf_path = results_tree.item(item, 'values')[2]
+        ipt_path = results_tree.item(item, 'values')[3]
+        iam_path = results_tree.item(item, 'values')[4]
+
+        if pdf_path:
+            def open_pdf():
+                if os.path.exists(pdf_path):
+                    os.startfile(pdf_path)
+                else:
+                    show_warning_message(f"{LANGUAGES[current_language]['pdf_not_found']}: {pdf_path}", "red")
+            menu.add_command(label=LANGUAGES[current_language]['open_pdf'], command=open_pdf)
+
+        if ipt_path:
+            def open_ipt():
+                if os.path.exists(ipt_path):
+                    os.startfile(ipt_path)
+                else:
+                    show_warning_message(f"{LANGUAGES[current_language]['ipt_not_found']}: {ipt_path}", "red")
+            menu.add_command(label=LANGUAGES[current_language]['open_ipt'], command=open_ipt)
+
+        if iam_path:
+            def open_iam():
+                if os.path.exists(iam_path):
+                    os.startfile(iam_path)
+                else:
+                    show_warning_message(f"{LANGUAGES[current_language]['iam_not_found']}: {iam_path}", "red")
+            menu.add_command(label=LANGUAGES[current_language]['open_iam'], command=open_iam)
 
     menu.post(event.x_root, event.y_root)
 
@@ -1410,6 +1625,11 @@ def on_tree_select(event):
             preview_win = None
         return
     file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
+    if file_path is None or file_path == "":
+        return
+    elif not os.path.exists(file_path):
+        show_warning_message(f"{LANGUAGES[current_language]['file_not_found']}: {file_path}", "red")
+        return
 
     # 如果点击的是同一个文件，不重复生成缩略图
     if last_file == file_path:
@@ -1431,14 +1651,14 @@ def on_tree_select(event):
         short_edge = int(height / 5 * sf)
         if orientation == "landscape":
             # 横向
-            if short_edge > 255:
-                short_edge = 255  # 限制高度最大为255，防止缩略图过大
+            if short_edge > int(200 * sf):
+                short_edge = int(200 * sf)  # 限制高度最大为200*sf，防止缩略图过大
                 long_edge = int(short_edge * width / height)
             preview = generate_pdf_preview(file_path, (long_edge, short_edge))
         else:
             # 纵向
-            if long_edge > 255:
-                long_edge = 255  # 限制高度最大为255，防止缩略图过大
+            if long_edge > int(200 * sf):
+                long_edge = int(200 * sf)  # 限制高度最大为200*sf，防止缩略图过大
                 short_edge = int(long_edge * height / width)
             preview = generate_pdf_preview(file_path, (short_edge, long_edge))
         if preview:
@@ -1700,6 +1920,9 @@ def reset_window():
 
     # 清空目录缓存
     directory_cache.clear()
+
+    # 清除 partname 数据
+    del search_partname.data
 
     # 重置cache label颜色
     cache_label.config(foreground="lightgray")
@@ -1980,7 +2203,7 @@ def on_root_close():
     stop_event.set()  # 发送退出信号
 
     # 强制终止所有子线程。实际上这段代码可以不写，
-    # 因为所有线程都已经设置为守护线程deamon=True，会在主线程退出时自动结束，
+    # 因为所有线程都已经设置为守护线程daemon=True，会在主线程退出时自动结束，
     # 加了这段代码是为了确保没有遗漏的非守护线程
     for thread in threading.enumerate():
         if thread is not threading.main_thread():
@@ -2055,6 +2278,7 @@ def update_texts():
     lucky_btn.config(text=LANGUAGES[current_language]['lucky'])
     search_3d_btn.config(text=LANGUAGES[current_language]['3d'])
     search_cache_btn.config(text=LANGUAGES[current_language]['vault'])
+    search_partname_btn.config(text=LANGUAGES[current_language]['partname'])
     reset_btn.config(text=LANGUAGES[current_language]['reset'])
     if expand_btn.cget("text").endswith('❯❯'):
         expand_btn.config(text=f"{LANGUAGES[current_language]['quick']}   ❯❯")
@@ -2259,23 +2483,23 @@ try:
     Tooltip(lucky_btn, lambda: LANGUAGES[current_language]['tip_lucky'], delay=500)
     root.bind("<Alt-l>", lambda event: feeling_lucky())
 
-    # Search 3D drawing 按钮
+    # Search 3D Drawing 按钮
     search_3d_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['3d'], style="All.TButton", width=btn_width, command=search_3d_files)
     search_3d_btn.grid(row=1, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
     Tooltip(search_3d_btn, lambda: LANGUAGES[current_language]['tip_3d'], delay=500)
     root.bind("<Alt-d>", lambda event: search_3d_files())
 
-    # Search vault cache 按钮
+    # Search Vault Cache 按钮
     search_cache_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['vault'], style="All.TButton", width=btn_width, command=search_vault_cache)
     search_cache_btn.grid(row=1, column=1, padx=(int(10*sf), int(5*sf)), pady=int(8*sf))
     Tooltip(search_cache_btn, lambda: LANGUAGES[current_language]['tip_vault'], delay=500)
     root.bind("<Alt-v>", lambda event: search_vault_cache())
 
-    # Reset 按钮
-    reset_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['reset'], width=btn_width, style="All.TButton", command=reset_window)
-    reset_btn.grid(row=2, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
-    Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
-    root.bind("<Alt-r>", lambda event: reset_window())
+    # Search Part Name 按钮
+    search_partname_btn = ttk.Button(button_frame, text=LANGUAGES[current_language]['partname'], width=btn_width, style="All.TButton", command=search_partname)
+    search_partname_btn.grid(row=2, column=0, padx=(int(5*sf), int(10*sf)), pady=int(8*sf))
+    Tooltip(search_partname_btn, lambda: LANGUAGES[current_language]['tip_partname'], delay=500)
+    root.bind("<Alt-n>", lambda event: search_partname())
 
     # 扩展按钮
     expand_btn = ttk.Button(button_frame, text=f"{LANGUAGES[current_language]['quick']}   ❯❯", width=btn_width, style="All.TButton", command=toggle_window_size)
@@ -2335,10 +2559,16 @@ try:
         lang_label = ttk.Label(about_frame, text="En", style="Lang.TLabel", cursor="hand2")
     else:
         lang_label = ttk.Label(about_frame, text="Fr", style="Lang.TLabel", cursor="hand2")
-    lang_label.pack(side=tk.RIGHT, padx=int(20*sf), pady=(int(4*sf)))
+    lang_label.pack(side=tk.RIGHT, padx=int(14*sf), pady=(int(4*sf)))
     Tooltip(lang_label, lambda: LANGUAGES[current_language]['language'], delay=500)
     lang_label.bind("<Button-1>", switch_language)  # 点击切换语言
     root.bind("<Alt-s>", lambda event: switch_language())
+
+    # Reset 按钮
+    reset_btn = ttk.Button(about_frame, text=LANGUAGES[current_language]['reset'], width=10, style="All.TButton", command=reset_window)
+    reset_btn.pack(side=tk.RIGHT, padx=int(5*sf), pady=(int(4*sf)))
+    Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
+    root.bind("<Alt-r>", lambda event: reset_window())
 
     # 添加 preview_check 复选框
     preview_var = tk.BooleanVar(value=True)  # 默认选中
