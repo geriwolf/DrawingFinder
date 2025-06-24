@@ -45,7 +45,7 @@ def find_highest_revision_file(files):
                 rev_map[base] = (0, f)
     return [v[1] for v in rev_map.values()]
 
-def generate_partname_dat(callback=None):
+def generate_partname_dat(partname_dat, callback=None):
     """后台生成 partname.dat 并在完成后调用回调"""
 
     # 用于计算生成时间，调试完成后可删除
@@ -98,7 +98,7 @@ def generate_partname_dat(callback=None):
             else:
                 result[part_number] = entry
 
-    dat_path = os.path.join(os.path.dirname(__file__), "partname.dat")
+    dat_path = partname_dat
     with open(dat_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 

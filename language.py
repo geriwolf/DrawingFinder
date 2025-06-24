@@ -98,6 +98,8 @@ LANGUAGES = {
         "part_no": "Part No.",
         "name": "Name",
         "drawing": "Drawing",
+        "file_path": "File Path: ",
+        "delete_data": "You can delete it manually to regenerate the latest data.",
     },
     "fr": {
         "input": "N° Pièce / Assemblage / Projet :",
@@ -197,5 +199,7 @@ LANGUAGES = {
         "part_no": "N° Pièce",
         "name": "Nom",
         "drawing": "Dessin",
+        "file_path": "Chemin du fichier: ",
+        "delete_data": "Vous pouvez le supprimer manuellement pour régénérer les données les plus récentes.",
     }
 }

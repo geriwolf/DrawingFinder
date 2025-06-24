@@ -1185,7 +1185,7 @@ def search_partname():
     # 获取程序的路径
     if getattr(sys, 'frozen', False):
         # 打包后的 .exe 环境
-        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+        base_dir = os.path.dirname(sys.executable)
     else:
         # 正常调试环境（解释器运行）
         base_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前脚本所在目录
@@ -1195,7 +1195,7 @@ def search_partname():
 
     # 如果partname.dat不存在，后台生成
     if not os.path.exists(partname_dat):
-        gen_partname()
+        gen_partname(partname_dat)
     else:
         # 进行part name搜索处理        
         entry_focus()  # 保持焦点在输入框
@@ -1296,17 +1296,19 @@ def search_partname_thread(query, partname_dat):
     finally:
         active_threads.discard(thread)  # 线程结束后移除
 
-def gen_partname():
+def gen_partname(partname_dat):
     """后台生成 partname.dat"""
     thread_name = "gen_partname_thread"
 
     def on_done():
         hide_warning_message()  # 隐藏生成中提示
-        messagebox.showinfo("Part Name", LANGUAGES[current_language]['partname_generated'])
+        messagebox.showinfo("Part Name", f"{LANGUAGES[current_language]['partname_generated']}\n\n"
+                            f"{LANGUAGES[current_language]['file_path']}\n{partname_dat}\n\n"
+                            f"{LANGUAGES[current_language]['delete_data']}")
 
     def run():
         try:
-            generate_partname_dat(callback=on_done)
+            generate_partname_dat(partname_dat, callback=on_done)
         finally:
             active_threads.discard(thread)
 
