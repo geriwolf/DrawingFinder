@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.0"  # 版本号
+ver = "1.4.1"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1836,8 +1836,13 @@ def show_about():
                     if about_win.winfo_exists() and update_frame.winfo_exists():
                         about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
                     break
+                elif v1 < v2:
+                    # 当前版本比最新版本号大，说明已经是更新版本
+                    if about_win.winfo_exists() and update_frame.winfo_exists():
+                        about_win.after(0, lambda: show_update_label(update_frame, None, None))
+                    break
             else:
-                # 检查完版本号三个字段都没有大于的情况，说明已经是最新版本
+                # 检查完版本号三个字段都相同，说明正在使用的已经是最新版本
                 if about_win.winfo_exists() and update_frame.winfo_exists():
                     about_win.after(0, lambda: show_update_label(update_frame, None, None))
 
