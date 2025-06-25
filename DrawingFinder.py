@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.1"  # 版本号
+ver = "1.4.2"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1242,11 +1242,9 @@ def search_partname_thread(query, partname_dat):
             match_func = lambda file: query in file.lower()
         
         if not hasattr(search_partname, "data"):
-            print("aaaaa")
             with open(partname_dat, "r", encoding="utf-8") as f:
                 search_partname.data = json.load(f)
-        else:
-            print("bbbbb")
+
         
         result_files_name = []
         # 遍历partname.dat中的数据，查找匹配的part name
@@ -1929,7 +1927,8 @@ def reset_window():
     directory_cache.clear()
 
     # 清除 partname 数据
-    del search_partname.data
+    if 'search_partname' in globals() and hasattr(search_partname, 'data'):
+        del search_partname.data
 
     # 重置cache label颜色
     cache_label.config(foreground="lightgray")
@@ -2371,8 +2370,10 @@ try:
     style.configure("Lang.TLabel", font=("Consolas", 9), background="lightblue")
 
     # 第一行标签的框架
-    label_frame = tk.Frame(root)
-    label_frame.pack(pady=(int(15*sf), int(5*sf)), anchor="w", fill="x")
+    label_frame = ttk.Frame(root)
+    label_frame.pack(pady=(int(15*sf), int(5*sf)), anchor="w")
+    label_frame.pack_propagate(False)  # 禁止自动调整大小
+    label_frame.config(width=int(345*sf), height=int(23*sf))  # 设置frame大小
 
     # 标签放在第一行
     prompt_label = ttk.Label(label_frame, text=LANGUAGES[current_language]['input'], font=("Segoe UI", 9), anchor="w")
@@ -2433,10 +2434,12 @@ try:
         parts_y_position = int(5*sf+(sf*100-125)/25*5)
 
     # 创建输入框框架
-    entry_frame = tk.Frame(root)
-    entry_frame.pack(pady=0, anchor="w", fill="x")
+    entry_frame = ttk.Frame(root)
+    entry_frame.pack(pady=0, anchor="w")
+    entry_frame.pack_propagate(False)  # 禁止自动调整大小
+    entry_frame.config(width=int(345*sf), height=int(58*sf))  # 设置frame大小
     entry = ttk.Entry(entry_frame, width=entry_width, font=("Consolas", 16))
-    entry.pack(padx=int(20*sf), pady=int(5*sf), anchor="w")
+    entry.pack(padx=int(20*sf), pady=(int(5*sf), int(4*sf)), anchor="w")
     create_entry_context_menu(entry)
     entry.focus()
     entry.bind("<Return>", lambda event: search_pdf_files())
@@ -2535,9 +2538,11 @@ try:
 
     # About 按钮
     about_frame = ttk.Frame(root)
-    about_frame.pack(anchor="e", padx=0, pady=0, fill="x")
+    about_frame.pack(anchor="w", padx=0, pady=0)
+    about_frame.pack_propagate(False)  # 禁止自动调整大小
+    about_frame.config(width=int(345*sf), height=int(35*sf))  # 设置frame大小
     about_label = ttk.Label(about_frame, text="ⓘ", style="About.TLabel", cursor="hand2")
-    about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(8*sf)))
+    about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(4*sf)))
     Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
     root.bind("<Alt-a>", lambda event: show_about())
@@ -2545,7 +2550,7 @@ try:
     # 添加刷新缓存标志
     # 先设置与窗口背景同色隐藏刷新标志，等有缓存完成后再显示
     refresh_cache_label = ttk.Label(about_frame, text="⟳", style="RefreshCache.TLabel", foreground="#F0F0F0")
-    refresh_cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
+    refresh_cache_label.pack(side=tk.RIGHT, padx=0, pady=int(4*sf))
     # 只有当refresh_cache_label是非隐藏的状态（非"#F0F0F0"颜色），才显示Tooltip
     def get_refresh_tooltip():
         current_fg = str(refresh_cache_label.cget("foreground")).lower()  # 获取当前字体颜色，转为小写以统一比较
@@ -2557,7 +2562,7 @@ try:
 
     # 显示缓存状态, 灰色无缓存，绿色缓存已完成，红色正在缓存
     cache_label = ttk.Label(about_frame, text="●", style="Cache.TLabel")
-    cache_label.pack(side=tk.RIGHT, padx=0, pady=(int(3*sf), int(8*sf)))
+    cache_label.pack(side=tk.RIGHT, padx=0, pady=int(4*sf))
     Tooltip(cache_label, get_cache_str, delay=500)
     cache_label.bind("<Button-1>", on_refresh_cache_click)  # 绑定点击刷新缓存函数，在点击该处时也能刷新缓存
 
@@ -2566,24 +2571,29 @@ try:
         lang_label = ttk.Label(about_frame, text="En", style="Lang.TLabel", cursor="hand2")
     else:
         lang_label = ttk.Label(about_frame, text="Fr", style="Lang.TLabel", cursor="hand2")
-    lang_label.pack(side=tk.RIGHT, padx=int(14*sf), pady=(int(4*sf)))
+    lang_label.pack(side=tk.RIGHT, padx=int(14*sf), pady=(int(5*sf), int(4*sf)))
     Tooltip(lang_label, lambda: LANGUAGES[current_language]['language'], delay=500)
     lang_label.bind("<Button-1>", switch_language)  # 点击切换语言
     root.bind("<Alt-s>", lambda event: switch_language())
 
-    # Reset 按钮
-    reset_btn = ttk.Button(about_frame, text=LANGUAGES[current_language]['reset'], width=10, style="All.TButton", command=reset_window)
-    reset_btn.pack(side=tk.RIGHT, padx=int(5*sf), pady=(int(4*sf)))
-    Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
-    root.bind("<Alt-r>", lambda event: reset_window())
-
+    # 创建用于preview check的frame，用来占位
+    preview_frame = ttk.Frame(about_frame)
+    preview_frame.pack(side=tk.LEFT, padx=0, pady=0)
+    preview_frame.pack_propagate(False)  # 禁止自动调整大小
+    preview_frame.config(width=int(120*sf), height=int(25*sf))  # 设置frame大小
     # 添加 preview_check 复选框
     preview_var = tk.BooleanVar(value=True)  # 默认选中
     preview_check = ttk.Checkbutton(
-        about_frame, text=LANGUAGES[current_language]['preview'], variable=preview_var, style="Preview.TCheckbutton", 
+        preview_frame, text=LANGUAGES[current_language]['preview'], variable=preview_var, style="Preview.TCheckbutton", 
         command=lambda: (on_tree_select(None), entry_focus())
     )
     Tooltip(preview_check, lambda: LANGUAGES[current_language]['show_preview'], delay=500)
+
+    # Reset 按钮
+    reset_btn = ttk.Button(about_frame, text=LANGUAGES[current_language]['reset'], width=10, style="All.TButton", command=reset_window)
+    reset_btn.pack(side=tk.LEFT, padx=(int(15*sf),0), pady=(int(4*sf)))
+    Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
+    root.bind("<Alt-r>", lambda event: reset_window())
 
     # 运行主循环
     root.mainloop()
