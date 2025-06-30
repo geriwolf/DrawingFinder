@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.2"  # 版本号
+ver = "1.4.3"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1626,6 +1626,8 @@ def on_tree_select(event):
         return
     file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
     if file_path is None or file_path == "":
+        if preview_win and preview_win.winfo_exists():
+            preview_win.destroy()  # 销毁旧窗口
         return
     elif not os.path.exists(file_path):
         show_warning_message(f"{LANGUAGES[current_language]['file_not_found']}: {file_path}", "red")
