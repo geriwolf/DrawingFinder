@@ -1589,7 +1589,7 @@ def get_pdf_page_orientation(pdf_path):
         show_warning_message(f"{LANGUAGES[current_language]['unable_pdf']}: {e}", "red")
         return None, None, None # 失败时返回None
 
-def generate_pdf_preview(pdf_path, preview_size=(330, 255)):
+def generate_pdf_img(pdf_path, preview_size=(330, 255)):
     """生成 PDF 文件的缩略图，330x255是根据letter纸张比例设置"""
     try:
         doc = fitz.open(pdf_path)
@@ -1602,22 +1602,113 @@ def generate_pdf_preview(pdf_path, preview_size=(330, 255)):
         show_warning_message(f"{LANGUAGES[current_language]['unable_preview']}: {e}", "red")
         return None
 
+def generate_preview_thread(file_path):
+    """生成预览缩略图的线程函数"""
+    global active_threads, last_file
+    
+    # 获取当前线程并添加到活动线程集合中
+    thread = threading.current_thread()
+    active_threads.add(thread)
+
+    try:
+        orientation, width, height = get_pdf_page_orientation(file_path)  # 判断 PDF 方向，获取长宽数据
+        if not orientation:
+            # 文件读取失败，重置 last_file
+            last_file = None
+            return
+        # 缩略图缩小1/5
+        long_edge = int(width / 5 * sf)
+        short_edge = int(height / 5 * sf)
+        if orientation == "landscape":
+            # 横向
+            if short_edge > int(200 * sf):
+                short_edge = int(200 * sf)  # 限制高度最大为200*sf，防止缩略图过大
+                long_edge = int(short_edge * width / height)
+            preview = generate_pdf_img(file_path, (long_edge, short_edge))
+        else:
+            # 纵向
+            if long_edge > int(200 * sf):
+                long_edge = int(200 * sf)  # 限制高度最大为200*sf，防止缩略图过大
+                short_edge = int(long_edge * height / width)
+            preview = generate_pdf_img(file_path, (short_edge, long_edge))
+
+        if not preview:
+            # 生成缩略图失败，重置 last_file
+            last_file = None
+            return
+        
+        # 在主线程中显示预览窗口
+        # 防止连续点击太快导致线程竞争，在显示预览窗口前检查 last_file 是否与当前文件相同
+        root.after(0, lambda: show_preview_window(preview, file_path, orientation, long_edge, short_edge)
+                   if last_file == file_path else None)
+    except Exception as e:
+        show_warning_message(f"{LANGUAGES[current_language]['unable_preview']}: {e}", "red")
+        last_file = None
+    
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
+
+def show_preview_window(preview, file_path, orientation, long_edge, short_edge):
+    """显示预览缩略图窗口"""
+    global preview_win
+
+    hide_warning_message()  # 清除警告信息
+    if preview_win and preview_win.winfo_exists():
+        preview_win.destroy()  # 销毁旧窗口
+        preview_win = None
+    # 创建一个新的独立窗口
+    preview_win = tk.Toplevel(root)
+    preview_win.configure(bg="orange")
+    preview_win.overrideredirect(True)
+    if topmost_var.get():
+
+        # 如果主窗口置顶，预览窗口也置顶
+        preview_win.attributes("-topmost", True)
+    # 根据纸张方向设置窗口的大小
+    if orientation == "landscape":
+        preview_win_width = long_edge + int(10*sf)
+        preview_win_height = short_edge + int(10*sf)
+    else:
+        preview_win_width = short_edge + int(10*sf)
+        preview_win_height = long_edge + int(10*sf)
+    preview_win.geometry(f"{preview_win_width}x{preview_win_height}")  # 设置窗口大小
+    preview_win.resizable(False, False)
+
+    # 显示预览
+    label = ttk.Label(preview_win, image=preview, anchor="center")
+    label.pack(padx=int(5*sf), pady=int(5*sf))
+    label.image = preview  # 保持引用，防止被垃圾回收
+    label.bind("<Double-1>", lambda event: open_file(file_path=file_path))  # 双击打开文件
+
+    # 用于关闭预览窗口的label
+    close_label = ttk.Label(preview_win, text="✕", style="Close.TLabel")
+    close_label.place(relx=1.0, x=int(-5*sf), y=int(5*sf), anchor="ne")  # 右上角
+    close_label.bind("<Button-1>", close_preview_window)  # 绑定点击事件
+
+    root.update_idletasks()  # 刷新主窗口状态
+    # 预览窗口出现主窗口左侧
+    x = root.winfo_rootx() - preview_win_width - int(1*sf)  # 特意与主窗口左侧边框留出1px间距，不紧贴边框更好看一些
+    y = root.winfo_rooty() + window_height + int(18*sf)
+    # 指定预览窗口显示的位置
+    preview_win.geometry(f"+{x}+{y}")
+
+def close_preview_window(event=None):
+    # 关闭预览窗口
+    global preview_win
+    if preview_win and preview_win.winfo_exists():
+        preview_win.destroy()
+        preview_win = None
+
 def on_tree_select(event):
     """当选中某个搜索结果时，如果是 PDF 文件，则在独立窗口显示预览"""
     global preview_win, results_tree, preview_check, preview_var, last_file
-
-    def close_window(event=None):
-        # 关闭预览窗口
-        global preview_win
-        if preview_win and preview_win.winfo_exists():
-            preview_win.destroy()
-            preview_win = None
-
+    
     selected_item = results_tree.selection()
     if search_hint.cget("text") != LANGUAGES[current_language]['esc_return']:
         search_hint.config(text=LANGUAGES[current_language]['esc_return'])
     if not selected_item:
         return
+    
     # 如果复选框存在且未勾选，关闭预览显示并返回
     if 'preview_check' in globals() and preview_check and not preview_var.get():
         if preview_win and preview_win.winfo_exists():
@@ -1643,64 +1734,7 @@ def on_tree_select(event):
             preview_win.destroy()  # 销毁旧窗口
 
     if file_path.lower().endswith(".pdf"):
-        orientation, width, height = get_pdf_page_orientation(file_path)  # 判断 PDF 方向，获取长宽数据
-        if not orientation:
-            # 文件读取失败，重置 last_file
-            last_file = None
-            return
-        # 缩略图缩小1/5
-        long_edge = int(width / 5 * sf)
-        short_edge = int(height / 5 * sf)
-        if orientation == "landscape":
-            # 横向
-            if short_edge > int(200 * sf):
-                short_edge = int(200 * sf)  # 限制高度最大为200*sf，防止缩略图过大
-                long_edge = int(short_edge * width / height)
-            preview = generate_pdf_preview(file_path, (long_edge, short_edge))
-        else:
-            # 纵向
-            if long_edge > int(200 * sf):
-                long_edge = int(200 * sf)  # 限制高度最大为200*sf，防止缩略图过大
-                short_edge = int(long_edge * height / width)
-            preview = generate_pdf_preview(file_path, (short_edge, long_edge))
-        if preview:
-            hide_warning_message()  # 清除警告信息
-            # 创建一个新的独立窗口
-            preview_win = tk.Toplevel(root)
-            preview_win.configure(bg="orange")
-            preview_win.overrideredirect(True)
-            if topmost_var.get():
-                # 如果主窗口置顶，预览窗口也置顶
-                preview_win.attributes("-topmost", True)
-            # 根据纸张方向设置窗口的大小
-            if orientation == "landscape":
-                preview_win_width = long_edge + int(10*sf)
-                preview_win_height = short_edge + int(10*sf)
-            else:
-                preview_win_width = short_edge + int(10*sf)
-                preview_win_height = long_edge + int(10*sf)
-            preview_win.geometry(f"{preview_win_width}x{preview_win_height}")  # 设置窗口大小
-            preview_win.resizable(False, False)
-
-            # 显示预览
-            label = ttk.Label(preview_win, image=preview, anchor="center")
-            label.pack(padx=int(5*sf), pady=int(5*sf))
-            label.image = preview  # 保持引用，防止被垃圾回收
-            label.bind("<Double-1>", lambda event: open_file(file_path=file_path))  # 双击打开文件
-
-            # 用于关闭预览窗口的label
-            close_label = ttk.Label(preview_win, text="✕", style="Close.TLabel")
-            close_label.place(relx=1.0, x=int(-5*sf), y=int(5*sf), anchor="ne")  # 右上角
-            close_label.bind("<Button-1>", close_window)  # 绑定点击事件
-
-            root.update_idletasks()  # 刷新主窗口状态
-            # 预览窗口出现主窗口左侧
-            x = root.winfo_rootx() - preview_win_width - int(1*sf)  # 特意与主窗口左侧边框留出1px间距，不紧贴边框更好看一些
-            y = root.winfo_rooty() + window_height + int(18*sf)
-            preview_win.geometry(f"+{x}+{y}")
-        else:
-            # 生成缩略图失败，重置 last_file
-            last_file = None
+        threading.Thread(target=lambda: generate_preview_thread(file_path), daemon=True).start()
     else:
         if preview_win and preview_win.winfo_exists():
             preview_win.destroy()  # 关闭预览窗口
@@ -1818,37 +1852,53 @@ def show_about():
             update_frame.pack_propagate(False)  # 固定高度占位
 
     # 后台线程检查更新
-    def fetch_update(about_win, update_frame):
-        latest_ver, download_url = check_for_updates()
-        if latest_ver:
-            # 比较版本号
-            get_ver_parts = list(map(int, latest_ver.split('.')))
-            cur_ver_parts = list(map(int, ver.split('.')))
-            
-            # 对较短的版本号补充 0，以确保两者长度相同
-            length = max(len(get_ver_parts), len(cur_ver_parts))
-            get_ver_parts.extend([0] * (length - len(get_ver_parts)))
-            cur_ver_parts.extend([0] * (length - len(cur_ver_parts)))
-            
-            # 逐部分比较
-            for v1, v2 in zip(get_ver_parts, cur_ver_parts):
-                if v1 > v2:
-                    # 如果最新版本号大于当前版本号，提示更新
-                    # 显示更新信息前先判断about窗口是否还存在，如果用户已经关闭了，就不显示
-                    if about_win.winfo_exists() and update_frame.winfo_exists():
-                        about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
-                    break
-                elif v1 < v2:
-                    # 当前版本比最新版本号大，说明已经是更新版本
+    def fetch_update_thread(about_win, update_frame):
+        global active_threads
+        # 获取当前线程并添加到活动线程集合中
+        thread = threading.current_thread()
+        active_threads.add(thread)
+        try:
+            latest_ver, download_url = check_for_updates()
+            if latest_ver:
+                # 比较版本号
+                get_ver_parts = list(map(int, latest_ver.split('.')))
+                cur_ver_parts = list(map(int, ver.split('.')))
+                
+                # 对较短的版本号补充 0，以确保两者长度相同
+                length = max(len(get_ver_parts), len(cur_ver_parts))
+                get_ver_parts.extend([0] * (length - len(get_ver_parts)))
+                cur_ver_parts.extend([0] * (length - len(cur_ver_parts)))
+                
+                # 逐部分比较
+                for v1, v2 in zip(get_ver_parts, cur_ver_parts):
+                    if v1 > v2:
+                        # 如果最新版本号大于当前版本号，提示更新
+                        # 显示更新信息前先判断about窗口是否还存在，如果用户已经关闭了，就不显示
+                        if about_win.winfo_exists() and update_frame.winfo_exists():
+                            about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
+                        break
+                    elif v1 < v2:
+                        # 当前版本比最新版本号大，说明已经是更新版本
+                        if about_win.winfo_exists() and update_frame.winfo_exists():
+                            about_win.after(0, lambda: show_update_label(update_frame, None, None))
+                        break
+                else:
+                    # 检查完版本号三个字段都相同，说明正在使用的已经是最新版本
                     if about_win.winfo_exists() and update_frame.winfo_exists():
                         about_win.after(0, lambda: show_update_label(update_frame, None, None))
-                    break
             else:
-                # 检查完版本号三个字段都相同，说明正在使用的已经是最新版本
-                if about_win.winfo_exists() and update_frame.winfo_exists():
-                    about_win.after(0, lambda: show_update_label(update_frame, None, None))
+                if download_url == "failed":
+                    # 更新检查失败
+                    if about_win.winfo_exists() and update_frame.winfo_exists():
+                        about_win.after(0, lambda: show_update_label(update_frame, None, download_url))
+        
+        except Exception as e:
+            print(f"Update check failed2: {e}")
+            
+        finally:
+            active_threads.discard(thread)  # 线程结束后移除
 
-    threading.Thread(target=lambda: fetch_update(about_win, update_frame), daemon=True).start()
+    threading.Thread(target=lambda: fetch_update_thread(about_win, update_frame), daemon=True).start()
 
     # 邮箱按钮和地址
     email_frame = tk.Frame(text_frame)
@@ -1891,7 +1941,7 @@ def check_for_updates():
             return latest_ver, download_url
     except Exception as e:
         print(f"Update check failed: {e}")
-        return None, None
+        return None, "failed"  # GitHub频繁访问API会导致无响应，通过给download_url回传"failed"来返回错误
 
 def show_update_label(parent, latest_ver, download_url):
     """显示版本提示信息"""
@@ -1900,8 +1950,12 @@ def show_update_label(parent, latest_ver, download_url):
         update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['update_download']} v{latest_ver}", foreground="blue", cursor="hand2", font=("Segoe UI", 8, "italic underline"))
         update_label.bind("<Button-1>", lambda e: webbrowser.open(download_url))
     else:
-        # 已经是最新版本
-        update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['already_latest']}", foreground="green", font=("Segoe UI", 8, "italic"))
+        if download_url == "failed":
+            # 更新检查失败，提示稍后再试
+            update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['update_check_failed']}", foreground="red", font=("Segoe UI", 8, "italic"))
+        else:
+            # 已经是最新版本
+            update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['already_latest']}", foreground="green", font=("Segoe UI", 8, "italic"))
 
     update_label.pack(anchor="w", fill='x')
 
