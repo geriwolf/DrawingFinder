@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.3"  # 版本号
+ver = "1.4.4"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1305,8 +1305,14 @@ def gen_partname(partname_dat):
                             f"{LANGUAGES[current_language]['delete_data']}")
 
     def run():
+        if changed_parts_path:
+            # 如果用户修改了parts路径，使用新的路径
+            parts_path = changed_parts_path
+        else:
+            # 否则使用默认的parts路径
+            parts_path = default_parts_path
         try:
-            generate_partname_dat(partname_dat, callback=on_done)
+            generate_partname_dat(partname_dat, parts_path, callback=on_done)
         finally:
             active_threads.discard(thread)
 
@@ -1852,53 +1858,34 @@ def show_about():
             update_frame.pack_propagate(False)  # 固定高度占位
 
     # 后台线程检查更新
-    def fetch_update_thread(about_win, update_frame):
+    def update_info(about_win, update_frame):
         global active_threads
         # 获取当前线程并添加到活动线程集合中
         thread = threading.current_thread()
         active_threads.add(thread)
         try:
-            latest_ver, download_url = check_for_updates()
-            if latest_ver:
-                # 比较版本号
-                get_ver_parts = list(map(int, latest_ver.split('.')))
-                cur_ver_parts = list(map(int, ver.split('.')))
-                
-                # 对较短的版本号补充 0，以确保两者长度相同
-                length = max(len(get_ver_parts), len(cur_ver_parts))
-                get_ver_parts.extend([0] * (length - len(get_ver_parts)))
-                cur_ver_parts.extend([0] * (length - len(cur_ver_parts)))
-                
-                # 逐部分比较
-                for v1, v2 in zip(get_ver_parts, cur_ver_parts):
-                    if v1 > v2:
-                        # 如果最新版本号大于当前版本号，提示更新
-                        # 显示更新信息前先判断about窗口是否还存在，如果用户已经关闭了，就不显示
-                        if about_win.winfo_exists() and update_frame.winfo_exists():
-                            about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))
-                        break
-                    elif v1 < v2:
-                        # 当前版本比最新版本号大，说明已经是更新版本
-                        if about_win.winfo_exists() and update_frame.winfo_exists():
-                            about_win.after(0, lambda: show_update_label(update_frame, None, None))
-                        break
-                else:
-                    # 检查完版本号三个字段都相同，说明正在使用的已经是最新版本
-                    if about_win.winfo_exists() and update_frame.winfo_exists():
-                        about_win.after(0, lambda: show_update_label(update_frame, None, None))
-            else:
-                if download_url == "failed":
-                    # 更新检查失败
-                    if about_win.winfo_exists() and update_frame.winfo_exists():
-                        about_win.after(0, lambda: show_update_label(update_frame, None, download_url))
+            new_available, latest_ver, download_url = fetch_update_thread()
+            if new_available == 1:
+                # 有新版本可用
+                # 显示更新信息前先判断about窗口是否还存在，如果用户已经关闭了，就不显示
+                if about_win.winfo_exists() and update_frame.winfo_exists():
+                    about_win.after(0, lambda: show_update_label(update_frame, latest_ver, download_url))            
+            elif new_available == 0:
+                # 无需更新版本
+                if about_win.winfo_exists() and update_frame.winfo_exists():
+                    about_win.after(0, lambda: show_update_label(update_frame, None, None))
+            elif new_available == -1:
+                # 更新检查失败
+                if about_win.winfo_exists() and update_frame.winfo_exists():
+                    about_win.after(0, lambda: show_update_label(update_frame, None, download_url))
         
         except Exception as e:
-            print(f"Update check failed2: {e}")
+            print(f"Update check failed: {e}")
             
         finally:
             active_threads.discard(thread)  # 线程结束后移除
 
-    threading.Thread(target=lambda: fetch_update_thread(about_win, update_frame), daemon=True).start()
+    threading.Thread(target=lambda: update_info(about_win, update_frame), daemon=True).start()
 
     # 邮箱按钮和地址
     email_frame = tk.Frame(text_frame)
@@ -1958,6 +1945,69 @@ def show_update_label(parent, latest_ver, download_url):
             update_label = ttk.Label(parent, text=f"{LANGUAGES[current_language]['already_latest']}", foreground="green", font=("Segoe UI", 8, "italic"))
 
     update_label.pack(anchor="w", fill='x')
+
+def fetch_update_thread():
+    """后台线程检查版本更新"""
+    global active_threads
+    # 获取当前线程并添加到活动线程集合中
+    thread = threading.current_thread()
+    active_threads.add(thread)
+
+    new_available = 0  # 默认没有新版本
+    try:
+        latest_ver, download_url = check_for_updates()
+        if latest_ver:
+            # 比较版本号
+            get_ver_parts = list(map(int, latest_ver.split('.')))
+            cur_ver_parts = list(map(int, ver.split('.')))
+            
+            # 对较短的版本号补充 0，以确保两者长度相同
+            length = max(len(get_ver_parts), len(cur_ver_parts))
+            get_ver_parts.extend([0] * (length - len(get_ver_parts)))
+            cur_ver_parts.extend([0] * (length - len(cur_ver_parts)))
+            
+            # 逐部分比较
+            for v1, v2 in zip(get_ver_parts, cur_ver_parts):
+                if v1 > v2:
+                    # 如果最新版本号大于当前版本号，表示有更新
+                    new_available = 1
+                    break
+                elif v1 < v2:
+                    # 当前版本比最新版本号大，说明已经是更新版本，无需更新
+                    new_available = 0
+                    break
+            else:
+                # 检查完版本号三个字段都相同，说明正在使用的已经是最新版本，无需更新
+                new_available = 0
+        else:
+            if download_url == "failed":
+                # 更新检查失败，回传-1值做后续处理
+                new_available = -1
+
+        return new_available, latest_ver, download_url
+    
+    except Exception as e:
+        print(f"Update check failed: {e}")
+        
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
+
+def change_about_symbol_color():
+    """检查是否有新版本，如果有则改变about符号的颜色为蓝色"""
+    global active_threads
+    # 获取当前线程并添加到活动线程集合中
+    thread = threading.current_thread()
+    active_threads.add(thread)
+    try:
+        new_available, _, _  = fetch_update_thread()  # 获取新版本信息
+        if new_available == 1:
+            root.after(0, lambda: about_label.config(foreground="dodgerblue"))  # 有新版本，变为蓝色
+
+    except Exception as e:
+        print(f"Update check failed: {e}")
+        
+    finally:
+        active_threads.discard(thread)  # 线程结束后移除
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
@@ -2602,6 +2652,7 @@ try:
     Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
     root.bind("<Alt-a>", lambda event: show_about())
+    threading.Thread(target=lambda: change_about_symbol_color(), daemon=True).start() # 后台线程根据版本信息改变about符号颜色
 
     # 添加刷新缓存标志
     # 先设置与窗口背景同色隐藏刷新标志，等有缓存完成后再显示

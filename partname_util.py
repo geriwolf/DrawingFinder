@@ -4,8 +4,12 @@ import re
 import time
 import json
 
-default_parts_path = os.path.normpath("K:\\PARTS")
-exclude_dirs = [os.path.join(default_parts_path, "S")]
+# 排除的目录，format ["S", "Temp",]
+exclude_list = ["S"]
+
+def join_exclude_dirs(parts_path, exclude_list):
+    """将排除的目录与 parts_path 连接"""
+    return [os.path.join(parts_path, ex) for ex in exclude_list]
 
 def extract_description_from_stp(file_path):
     """从 .stp 文件中提取描述信息"""
@@ -45,13 +49,16 @@ def find_highest_revision_file(files):
                 rev_map[base] = (0, f)
     return [v[1] for v in rev_map.values()]
 
-def generate_partname_dat(partname_dat, callback=None):
+def generate_partname_dat(partname_dat, parts_path, callback=None):
     """后台生成 partname.dat 并在完成后调用回调"""
+
+    # 排除目录
+    exclude_dirs = join_exclude_dirs(parts_path, exclude_list)
 
     # 用于计算生成时间，调试完成后可删除
     start_time = time.time()
     result = {}
-    for root, dirs, files in os.walk(default_parts_path):
+    for root, dirs, files in os.walk(parts_path):
         if any(ex in root for ex in exclude_dirs):
             continue  # 跳过排除目录
         stp_files = [f for f in files if f.lower().endswith('.stp')]
