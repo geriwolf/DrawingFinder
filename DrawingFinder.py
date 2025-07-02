@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.4"  # 版本号
+ver = "1.4.5"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1600,7 +1600,10 @@ def generate_pdf_img(pdf_path, preview_size=(330, 255)):
     try:
         doc = fitz.open(pdf_path)
         page = doc[0]  # 读取第一页
-        pix = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5))  # 缩小 50% 生成更小的图片
+        if sf < 2.5:
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5))  # 缩小 50% 生成更小的图片
+        else:
+            pix = page.get_pixmap(matrix=fitz.Matrix(1, 1))  # 大尺寸屏幕，如果屏幕缩放值很大，50%比例的图片会太小，所以用100%比例
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         img.thumbnail(preview_size)  # 生成缩略图供预览
         return ImageTk.PhotoImage(img)
@@ -2511,7 +2514,7 @@ try:
         btn_width = 21
         entry_width = 25
         parts_dir_width = 33
-        parts_y_position = int(5*sf-3)
+        parts_y_position = int(5*sf-2)
     elif ScaleFactor == 125:
         btn_width = 20
         entry_width = 25
@@ -2521,23 +2524,23 @@ try:
         btn_width = 19
         entry_width = 25
         parts_dir_width = 35
-        parts_y_position = int(5*sf+5)
+        parts_y_position = int(5*sf+2)
     elif ScaleFactor == 175:
         btn_width = 21
         entry_width = 26
         parts_dir_width = 36
-        parts_y_position = int(5*sf+10)
+        parts_y_position = int(5*sf+4)
     elif ScaleFactor == 200:
         btn_width = 20
         entry_width = 25
         parts_dir_width = 38
-        parts_y_position = int(5*sf+14)
+        parts_y_position = int(5*sf+6)
     else:
         btn_width = 20
         entry_width = 25
         parts_dir_width = 35
         # 对于大于200的缩放比例，进行特殊处理，使最后一行始终位于窗口底部
-        parts_y_position = int(5*sf+(sf*100-125)/25*5)
+        parts_y_position = int(5*sf+(14*sf-22))
 
     # 创建输入框框架
     entry_frame = ttk.Frame(root)
