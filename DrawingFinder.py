@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.5"  # 版本号
+ver = "1.4.6"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1446,13 +1446,13 @@ def show_result_list(result_files, search_type=None):
         results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
         for col in columns:
             results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
-        results_tree.column(LANGUAGES[current_language]['part_no'], width=90, anchor="w")
-        results_tree.column(LANGUAGES[current_language]['name'], width=200, anchor="w")
+        results_tree.column(LANGUAGES[current_language]['part_no'], width=int(60*sf), anchor="w")
+        results_tree.column(LANGUAGES[current_language]['name'], width=int(150*sf), anchor="w")
         # 设置PDF、IPT、IAM列宽为0，隐藏这些列
         results_tree.column("PDF", width=0, stretch=tk.NO)
         results_tree.column("IPT", width=0, stretch=tk.NO)
         results_tree.column("IAM", width=0, stretch=tk.NO)
-        results_tree.column(LANGUAGES[current_language]['drawing'], width=100, anchor="w")
+        results_tree.column(LANGUAGES[current_language]['drawing'], width=int(70*sf), anchor="w")
     else:
         columns = (LANGUAGES[current_language]['file_name'], LANGUAGES[current_language]['created_time'], "Path")
         results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
@@ -1461,8 +1461,8 @@ def show_result_list(result_files, search_type=None):
         results_tree.sort_states = {col: False for col in columns}  # False 表示升序, True 表示降序
         for col in columns:
             results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
-        results_tree.column(LANGUAGES[current_language]['file_name'], width=150, anchor="w")
-        results_tree.column(LANGUAGES[current_language]['created_time'], width=135, anchor="w")
+        results_tree.column(LANGUAGES[current_language]['file_name'], width=int(150*sf), anchor="w")
+        results_tree.column(LANGUAGES[current_language]['created_time'], width=int(135*sf), anchor="w")
         results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列
 
     # 创建一个垂直滚动条并将其与 Treeview 关联
@@ -1720,12 +1720,14 @@ def on_tree_select(event):
     
     # 如果复选框存在且未勾选，关闭预览显示并返回
     if 'preview_check' in globals() and preview_check and not preview_var.get():
+        hide_warning_message()  # 隐藏信息
         if preview_win and preview_win.winfo_exists():
             preview_win.destroy()
             preview_win = None
         return
     file_path = results_tree.item(selected_item, "values")[2]  # 获取文件路径
     if file_path is None or file_path == "":
+        hide_warning_message()  # 如果没有pdf，隐藏信息
         if preview_win and preview_win.winfo_exists():
             preview_win.destroy()  # 销毁旧窗口
         return
