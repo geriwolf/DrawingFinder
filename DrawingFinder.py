@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.6"  # 版本号
+ver = "1.4.7"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1378,6 +1378,87 @@ def sort_treeview(col, columns):
         results_tree.heading(c, text=c)  # 先重置所有表头
     results_tree.heading(col, text=col + arrow, command=lambda: sort_treeview(col, columns))
 
+def setup_hover_tooltip():
+    """设置鼠标悬停在results_tree的第二列时弹出浮动窗口，用于partname过长时显示完整内容"""
+    # 记录上一次鼠标所在的条目 ID（用于避免重复触发）
+    last_hovered_item = None
+    # 提示窗口和标签
+    hover_win = None
+    hover_label = None
+    hover_after_id = None  # 用于取消延迟任务
+    pending_text = ""      # 存储准备显示的文字
+
+    def on_mouse_motion(event):
+        """鼠标移动事件处理函数"""
+        nonlocal last_hovered_item, hover_win, hover_label, hover_after_id, pending_text
+
+        # 获取鼠标当前所处的区域（如 cell, heading 等）
+        region = results_tree.identify("region", event.x, event.y)
+        # 获取鼠标当前处于哪一列（例如 "#2" 表示第二列）
+        col = results_tree.identify_column(event.x)
+
+        # 仅当鼠标悬停在“第二列的单元格”时才显示提示
+        if region == "cell" and col == "#2":
+            item_id = results_tree.identify_row(event.y)
+
+            # 如果鼠标进入了新的单元格（不是上一次的），则更新提示
+            if item_id and item_id != last_hovered_item:
+                last_hovered_item = item_id
+                # 每次移动到新单元格时取消旧的定时器和提示
+                if hover_after_id:
+                    results_tree.after_cancel(hover_after_id)
+                    hover_after_id = None
+                hide_hover()
+                values = results_tree.item(item_id, 'values')
+
+                # 确保第二列存在内容
+                if len(values) > 1 and values[1].strip():
+                    pending_text = values[1].strip()  # 第二列的内容作为提示文本
+
+                    # 延迟 500 毫秒后显示窗口
+                    hover_after_id = results_tree.after(500, lambda: show_hover(event.x_root, event.y_root, pending_text))
+                else:
+                    # 如果第二列没有内容，隐藏提示窗口
+                    hide_hover()
+        else:
+            # 如果鼠标不在第二列或不在 cell 区域，重置状态并隐藏提示
+            last_hovered_item = None
+            pending_text = ""
+            if hover_after_id:
+                results_tree.after_cancel(hover_after_id)
+                hover_after_id = None
+            hide_hover()
+
+    def show_hover(x_root, y_root, text):
+        """显示提示窗口"""
+        nonlocal hover_win, hover_label
+        # 获取屏幕上的鼠标位置，稍微偏移避免挡住指针
+        x = x_root + 10
+        y = y_root + 10
+
+        hover_win = tk.Toplevel(results_tree)
+        hover_win.overrideredirect(True)    # 无边框
+        hover_win.attributes("-topmost", True)  # 保持最前
+        hover_win.geometry(f"+{x}+{y}")
+
+        hover_label = ttk.Label(
+            hover_win, text=text,
+            relief="solid", borderwidth=1,
+            background="#ffffe0", padding=(5, 2)
+        )
+        hover_label.pack()
+
+    def hide_hover(event=None):
+        """隐藏提示窗口"""
+        nonlocal hover_win
+        if hover_win and hover_win.winfo_exists():
+            hover_win.destroy()
+            hover_win = None
+
+    # 绑定事件：鼠标移动和离开时触发相应事件
+    results_tree.bind("<Motion>", on_mouse_motion)
+    results_tree.bind("<Leave>", hide_hover)
+
 def show_result_list(result_files, search_type=None):
     """显示搜索结果"""
     global result_frame, results_tree, preview_check, preview_win
@@ -1518,6 +1599,9 @@ def show_result_list(result_files, search_type=None):
         results_tree.focus_set()
         results_tree.focus(first_item)
         results_tree.selection_set(first_item)
+
+    if search_type == "name":
+        setup_hover_tooltip()  # 如果part name名字过长，通过鼠标悬停显示完整名字
 
 def on_right_click(event):
     """给 Treeview 添加右键菜单"""
@@ -1906,7 +1990,7 @@ def show_about():
     # 设置OK按钮的样式，主要想增加按钮高度，以便于不移动鼠标即可点击按钮关闭窗口
     style.configure("AboutOK.TButton", font=("Segoe UI", 9), padding=(5, 5))
     ok_button = ttk.Button(about_win, text="OK", style="AboutOK.TButton", command=on_close)
-    ok_button.pack(padx=int(15*sf), pady=int(15*sf), side=tk.RIGHT)
+    ok_button.pack(padx=int(20*sf), pady=(0, int(20*sf)), side=tk.RIGHT)
     ok_button.focus()
 
 def send_email():
@@ -2657,7 +2741,6 @@ try:
     Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
     root.bind("<Alt-a>", lambda event: show_about())
-    threading.Thread(target=lambda: change_about_symbol_color(), daemon=True).start() # 后台线程根据版本信息改变about符号颜色
 
     # 添加刷新缓存标志
     # 先设置与窗口背景同色隐藏刷新标志，等有缓存完成后再显示
@@ -2707,6 +2790,8 @@ try:
     Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
     root.bind("<Alt-r>", lambda event: reset_window())
 
+    # 2秒后台线程根据版本信息改变about符号颜色
+    root.after(2000, lambda: threading.Thread(target=change_about_symbol_color, daemon=True).start())  
     # 运行主循环
     root.mainloop()
 except Exception as e:
