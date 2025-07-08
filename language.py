@@ -101,6 +101,7 @@ LANGUAGES = {
         "file_path": "File Path: ",
         "delete_data": "You can delete it manually to regenerate the latest data.",
         "update_check_failed": "Update check failed. Please try again later.",
+        "cpoied_part_number": "Tip: Click the button to search the copied part number.",
     },
     "fr": {
         "input": "N° Pièce / Assemblage / Projet :",
@@ -203,5 +204,6 @@ LANGUAGES = {
         "file_path": "Chemin du fichier: ",
         "delete_data": "Vous pouvez le supprimer manuellement pour régénérer les données les plus récentes.",
         "update_check_failed": "Échec de la mise à jour. Réessayez plus tard.",
+        "cpoied_part_number": "Astuce: Cliquez pour rechercher le numéro copié.",
     }
 }

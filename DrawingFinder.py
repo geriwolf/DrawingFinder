@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.7"  # 版本号
+ver = "1.4.8"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -764,6 +764,18 @@ def search_files_thread(query, search_directory, search_type):
     finally:
         active_threads.discard(thread)  # 线程结束后移除
 
+def fill_entry_from_clipboard():
+    """如果输入框为空，尝试从剪贴板读取内容并填入，检查是否是part number格式"""
+    if not entry.get().strip():
+        try:
+            clipboard_content = root.clipboard_get().strip()
+            # 检查剪贴板内容是否符合part number格式（两位数字开头），并且长度不超过20个字符
+            if re.match(r'^\d{2}', clipboard_content) and len(clipboard_content) <= 20:
+                entry.delete(0, tk.END)
+                entry.insert(0, clipboard_content)
+        except tk.TclError:
+            pass  # 剪贴板为空或不可访问
+
 def search_pdf_files():
     """执行pdf搜索"""
     global last_query, history_listbox, history_frame
@@ -777,6 +789,9 @@ def search_pdf_files():
         history_frame = None
 
     entry_focus()  # 保持焦点在输入框
+
+    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+    
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
@@ -798,6 +813,9 @@ def feeling_lucky():
     """执行feeling lucky搜索"""
     global last_query
     entry_focus()  # 保持焦点在输入框
+
+    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+    
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
@@ -821,6 +839,9 @@ def search_3d_files():
     """执行3d文件搜索"""
     global last_query
     entry_focus()  # 保持焦点在输入框
+
+    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
         # 如果搜索关键字跟上一次一样，直接调用上一次的搜索结果
@@ -842,6 +863,9 @@ def search_vault_cache():
     """搜索Vault缓存目录下的 3D 文件(ipt或者iam)"""
     global last_query
     entry_focus()  # 保持焦点在输入框
+
+    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
@@ -1199,6 +1223,9 @@ def search_partname():
     else:
         # 进行part name搜索处理        
         entry_focus()  # 保持焦点在输入框
+
+        fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+
         disable_search_button() # 禁用搜索按钮
         hide_warning_message()  # 清除警告信息
         query = entry.get().strip().lower() # 去除首尾空格
@@ -2145,7 +2172,8 @@ def reset_window():
     last_query = None
     
     entry.delete(0, tk.END)  # 清空输入框
-    hide_warning_message()  # 清除警告信息
+    #hide_warning_message()  # 清除警告信息
+    root.after(100, lambda: show_warning_message(LANGUAGES[current_language]['cpoied_part_number'], "blue"))
     enable_search_button() # 启用搜索按钮
 
     # 移除显示的搜索结果
@@ -2660,6 +2688,7 @@ try:
 
     entry.bind("<KeyRelease>", key_release)
     entry.bind("<FocusIn>", show_entry_label)  # 当 Entry 获取焦点时根据内容决定是否显示回车搜索和清除label
+    root.bind("<Alt-c>", lambda event: clear_entry())  # 绑定 Alt+C 快捷键清空输入框
 
     # 绑定点击事件：点击 Label 的 X 就清空 Entry
     clear_label.bind("<Button-1>", clear_entry)
@@ -2790,6 +2819,8 @@ try:
     Tooltip(reset_btn, lambda: LANGUAGES[current_language]['tip_reset'], delay=500)
     root.bind("<Alt-r>", lambda event: reset_window())
 
+    # 显示可以直接读取剪贴版的提示
+    root.after(100, lambda: show_warning_message(LANGUAGES[current_language]['cpoied_part_number'], "blue"))
     # 2秒后台线程根据版本信息改变about符号颜色
     root.after(2000, lambda: threading.Thread(target=change_about_symbol_color, daemon=True).start())  
     # 运行主循环
