@@ -2172,8 +2172,7 @@ def reset_window():
     last_query = None
     
     entry.delete(0, tk.END)  # 清空输入框
-    #hide_warning_message()  # 清除警告信息
-    root.after(100, lambda: show_warning_message(LANGUAGES[current_language]['cpoied_part_number'], "blue"))
+    hide_warning_message()  # 清除警告信息
     enable_search_button() # 启用搜索按钮
 
     # 移除显示的搜索结果
@@ -2525,6 +2524,7 @@ def update_texts():
         search_hint.config(text=LANGUAGES[current_language]['enter_search'])
     else:
         search_hint.config(text=LANGUAGES[current_language]['esc_return'])
+    show_warning_message(LANGUAGES[current_language]['cpoied_part_number'], "blue")  # 更新从剪贴板读取的提示
 
 def entry_focus():
     # 焦点回到输入框，并重置回车搜索的提示
