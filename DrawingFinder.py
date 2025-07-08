@@ -764,15 +764,16 @@ def search_files_thread(query, search_directory, search_type):
     finally:
         active_threads.discard(thread)  # 线程结束后移除
 
-def fill_entry_from_clipboard():
+def fill_entry_from_clipboard(widget=None):
     """如果输入框为空，尝试从剪贴板读取内容并填入，检查是否是part number格式"""
-    if not entry.get().strip():
+    target_widget = widget if widget else entry
+    if not target_widget.get().strip():
         try:
             clipboard_content = root.clipboard_get().strip()
             # 检查剪贴板内容是否符合part number格式（两位数字开头），并且长度不超过20个字符
             if re.match(r'^\d{2}', clipboard_content) and len(clipboard_content) <= 20:
-                entry.delete(0, tk.END)
-                entry.insert(0, clipboard_content)
+                target_widget.delete(0, tk.END)
+                target_widget.insert(0, clipboard_content)
         except tk.TclError:
             pass  # 剪贴板为空或不可访问
 
@@ -790,7 +791,7 @@ def search_pdf_files():
 
     entry_focus()  # 保持焦点在输入框
 
-    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+    fill_entry_from_clipboard(widget=entry)  # 从剪贴板读取内容并填入
     
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
@@ -814,7 +815,7 @@ def feeling_lucky():
     global last_query
     entry_focus()  # 保持焦点在输入框
 
-    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+    fill_entry_from_clipboard(widget=entry)  # 从剪贴板读取内容并填入
     
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
@@ -840,7 +841,7 @@ def search_3d_files():
     global last_query
     entry_focus()  # 保持焦点在输入框
 
-    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+    fill_entry_from_clipboard(widget=entry)  # 从剪贴板读取内容并填入
 
     query = entry.get().strip() # 去除首尾空格
     if query == last_query:
@@ -864,7 +865,7 @@ def search_vault_cache():
     global last_query
     entry_focus()  # 保持焦点在输入框
 
-    fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+    fill_entry_from_clipboard(widget=entry)  # 从剪贴板读取内容并填入
 
     disable_search_button() # 禁用搜索按钮
     hide_warning_message()  # 清除警告信息
@@ -1224,7 +1225,7 @@ def search_partname():
         # 进行part name搜索处理        
         entry_focus()  # 保持焦点在输入框
 
-        fill_entry_from_clipboard()  # 从剪贴板读取内容并填入
+        fill_entry_from_clipboard(widget=entry)  # 从剪贴板读取内容并填入
 
         disable_search_button() # 禁用搜索按钮
         hide_warning_message()  # 清除警告信息
@@ -2380,6 +2381,8 @@ def open_mini_window():
     # 定义 mini 窗口的搜索操作
     def on_search_mini(event=None):
         mini_entry.focus() # 焦点回位到输入框
+
+        fill_entry_from_clipboard(widget=mini_entry)  # 从剪贴板填充输入框内容
         query = mini_entry.get().strip()
         if query:
             # 将 mini 窗口输入内容传递到主窗口的输入框
