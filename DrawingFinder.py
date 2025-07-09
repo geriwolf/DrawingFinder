@@ -2128,7 +2128,7 @@ def change_about_symbol_color():
 
 def reset_window():
     """恢复主窗口到初始状态，停止搜索进程，清空缓存"""
-    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, preview_win, refresh_cache_click_count, last_input
+    global result_frame, results_tree, window_expanded, shortcut_frame, last_query, preview_win, refresh_cache_click_count, refresh_cache_click_first_time, last_input
 
     last_input = ""
     entry_focus()  # 保持焦点在输入框
@@ -2146,21 +2146,19 @@ def reset_window():
     # 重置停止事件，以便下一次搜索可以正常启动
     stop_event.clear()
 
-    # 清空目录缓存
-    directory_cache.clear()
+    # 清空目录缓存, 重置cache label颜色, 隐藏刷新按钮（与窗口背景同色）
+    # 暂时注释掉，reset时不清除缓存
+    #directory_cache.clear()
+    #cache_label.config(foreground="lightgray")
+    #refresh_cache_label.config(foreground="#F0F0F0")
+
+    # 重置缓存刷新点击次数和计时
+    refresh_cache_click_count = 0
+    refresh_cache_click_first_time = None
 
     # 清除 partname 数据
     if 'search_partname' in globals() and hasattr(search_partname, 'data'):
         del search_partname.data
-
-    # 重置cache label颜色
-    cache_label.config(foreground="lightgray")
-
-    # 重置缓存点击次数
-    refresh_cache_click_count = 0
-
-    # 隐藏刷新按钮，与窗口背景同色
-    refresh_cache_label.config(foreground="#F0F0F0")
 
     # 隐藏 preview_check
     preview_check.forget()
@@ -2525,7 +2523,7 @@ def update_texts():
     create_entry_context_menu(entry) # 更新主窗口输入框的右键菜单语言
     if search_hint.cget("text") == LANGUAGES["en"]['enter_search'] or search_hint.cget("text") == LANGUAGES["fr"]['enter_search']:
         search_hint.config(text=LANGUAGES[current_language]['enter_search'])
-    else:
+    elif search_hint.cget("text") == LANGUAGES["en"]['esc_return'] or search_hint.cget("text") == LANGUAGES["fr"]['esc_return']:
         search_hint.config(text=LANGUAGES[current_language]['esc_return'])
     show_warning_message(LANGUAGES[current_language]['cpoied_part_number'], "blue")  # 更新从剪贴板读取的提示
 
