@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.4.8"  # 版本号
+ver = "1.5.0"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -426,7 +426,9 @@ def enable_search_button():
 def build_directory_cache_thread(search_directory):
     """
     遍历指定目录，构建目录缓存。
-    每个文件信息是一个元组：(文件名, 创建时间, 文件路径)
+    每个目录缓存包括：
+        - files_info: 当前目录所有文件的列表，每个元素为 (文件名, 创建时间, 文件路径)
+        - idw_index: 前9位 part_number -> idw 文件路径的字典
     """
     global directory_cache, active_threads
     thread = threading.current_thread()
@@ -447,10 +449,12 @@ def build_directory_cache_thread(search_directory):
         for root_dir, _, files in os.walk(search_directory):
             if stop_event.is_set():  # 检查是否需要终止
                 return
-            for file in files:
+
+            sort_files = sorted(files)  # 按文件名排序
+            for file in sort_files:
                 if stop_event.is_set():  # 检查是否需要终止
                     return
-                if file.endswith((".pdf", ".iam", ".ipt")):
+                if file.endswith((".pdf", ".iam", ".ipt", ".idw")):
                     file_path = os.path.join(root_dir, file)
                     try:
                         create_time = os.path.getctime(file_path)
@@ -461,18 +465,32 @@ def build_directory_cache_thread(search_directory):
         if stop_event.is_set():  # 检查停止标志并返回
             return
 
+        # 构建 IDW 索引
+        idw_index = {}
+        for f, _, path in files_info:
+            if f.endswith(".idw"):
+                part_number = f[:9]
+                idw_index[part_number] = path
+
         # 使用线程锁保护directory_cache
         with cache_lock:
             # 如果缓存数量超过 cache_max_size 限制，则删除最老的未使用项（LRU）
             if len(directory_cache) >= cache_max_size:
                 directory_cache.popitem(last=False)  # 移除最老的未使用项
 
-            # 添加新缓存数据，并将其移动到末尾（表示最近使用）
-            directory_cache[search_directory] = files_info
+            # 存入缓存，value 为字典，包含 files_info 和 idw_index
+            directory_cache[search_directory] = {
+                "files_info": files_info,
+                "idw_index": idw_index
+            }
+            # 将缓存移动到末尾（表示最近使用）
             directory_cache.move_to_end(search_directory)
 
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_cache']}: {e}"))
+        root.after(0, lambda e=e: messagebox.showerror(
+            LANGUAGES[current_language]['error'],
+            f"{LANGUAGES[current_language]['error_cache']}: {e}"
+        ))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -505,16 +523,24 @@ def show_cache_status():
     cache_pattern = re.compile(r"cache_thread_.*?\\([^\\,]+)(?=\s|,|$)")
     caching_list = [match.group(1) for item in active_threads if (match := cache_pattern.search(str(item)))]
 
+    # 重置按钮不清空缓存，所以这段注释掉
     # 如果点击了重置按钮，直接改为灰色
-    if stop_event.is_set():
-        root.after(0, lambda: cache_label.config(foreground="lightgray"))  # 设置cache_label为灰色
-        root.after(0, lambda: refresh_cache_label.config(foreground="#F0F0F0"))  # 隐藏refresh_cache_label
-        return
+    #if stop_event.is_set():
+    #    root.after(0, lambda: cache_label.config(foreground="lightgray"))  # 设置cache_label为灰色
+    #    root.after(0, lambda: refresh_cache_label.config(foreground="#F0F0F0"))  # 隐藏refresh_cache_label
+    #    return
     
     if not caching_list:
-        root.after(0, lambda: cache_label.config(foreground="lime"))  # 设置cache_label为绿色
-        root.after(0, lambda: refresh_cache_label.config(foreground="black"))  # 显示refresh_cache_label
+        if not directory_cache:
+            # 没有正在缓存的目录，也没有已缓存的目录
+            root.after(0, lambda: cache_label.config(foreground="lightgray"))
+            root.after(0, lambda: refresh_cache_label.config(foreground="#F0F0F0"))  # 隐藏refresh_cache_label
+        else:
+            # 没有正在缓存的目录，但有已缓存的目录
+            root.after(0, lambda: cache_label.config(foreground="lime"))  # 设置cache_label为绿色
+            root.after(0, lambda: refresh_cache_label.config(foreground="black"))  # 显示refresh_cache_label
     else:
+        # 有正在缓存的目录
         root.after(0, lambda: cache_label.config(foreground="red"))  # 设置cache_label为红色
         root.after(0, lambda: refresh_cache_label.config(foreground="lightgray")) # 设置refresh_cache_label为灰色
 
@@ -669,8 +695,8 @@ def search_files_thread(query, search_directory, search_type):
         result_files_pdf = []
         result_files_3d = []
         # 从缓存中取出所有文件信息
-        all_files = get_cached_directory(search_directory)
-        if all_files is None:
+        cache_entry = get_cached_directory(search_directory)
+        if cache_entry is None:
             # 如果缓存中没有该目录的记录，则在后台建立缓存
             # 检查是否已经有当前搜索目录的缓存线程在运行
             if not any(t.name == f"cache_thread_{search_directory}" for t in active_threads):
@@ -678,12 +704,34 @@ def search_files_thread(query, search_directory, search_type):
                 cache_thread.name = f"cache_thread_{search_directory}"
                 cache_thread.start()
 
-            # 直接遍历目录下的文件，不使用缓存
+            # 定义变量用于比对上一次循环中检查的idw文件路径结果
+            last_idw_file_path = ""
+            last_idw_exist = ""
+            def get_idw_file_path(file):
+                """获取对应的idw文件路径，如果存在则返回路径，否则返回空字符串"""
+                nonlocal last_idw_file_path, last_idw_exist  # 声明使用外层变量
+                p_number = file[:9]  # 获取文件名的前9个字符作为part number
+                # idw文件名和路径
+                idw_file = f"{p_number}.idw"
+                idw_file_path = os.path.join(root_dir, idw_file)
+
+                if idw_file_path == last_idw_file_path:
+                    # 和上一次一样，直接复用
+                    idw_exist = last_idw_exist
+                else:
+                    # 不一样，重新判断并更新变量
+                    idw_exist = idw_file_path if os.path.isfile(idw_file_path) else ""  # 如果idw文件存在，返回路径，否则返回空字符串
+                    last_idw_file_path = idw_file_path
+                    last_idw_exist = idw_exist
+                return idw_exist
             i = 50
+            # 直接遍历目录下的文件，不使用缓存
             for root_dir, _, files in os.walk(search_directory):
                 if stop_event.is_set():  # 检查是否需要终止
                     return
-                for file in files:
+                # 对文件名进行排序，因为os.walk返回的文件列表是无序的
+                sorted_files = sorted(files)
+                for file in sorted_files:
                     if stop_event.is_set():  # 检查是否需要终止
                         return
                     # 每遍历50个文件，显示一次文件名，体现搜索过程
@@ -695,14 +743,18 @@ def search_files_thread(query, search_directory, search_type):
                     if file.endswith(".pdf") and match_func(file):
                         file_path = os.path.join(root_dir, file)
                         create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                        result_files_pdf.append((file, create_time, file_path))  # (文件名, 创建时间, 文件路径)
+                        idw_exist = get_idw_file_path(file)  # 获取对应的idw文件路径
+                        result_files_pdf.append((file, create_time, file_path, idw_exist))  # (文件名，创建时间，文件路径，idw文件路径)
                     elif (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
                         file_path = os.path.join(root_dir, file)
                         create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                        result_files_3d.append((file, create_time, file_path))  # (文件名, 创建时间, 文件路径)
+                        idw_exist = get_idw_file_path(file)  # 获取对应的idw文件路径
+                        result_files_3d.append((file, create_time, file_path, idw_exist))  # (文件名，创建时间，文件路径，idw文件路径)
 
         else:
             # 使用缓存中的文件信息
+            all_files = cache_entry["files_info"]  # 从缓存中获取所有文件信息
+            idw_index = cache_entry["idw_index"]  # 从缓存中获取idw索引字典
             i = 50
             for file_info in all_files:
                 if stop_event.is_set():  # 检查是否需要终止
@@ -717,11 +769,19 @@ def search_files_thread(query, search_directory, search_type):
                 if file_name.endswith(".pdf") and match_func(file_name):
                     # 格式化创建时间
                     create_time = datetime.datetime.fromtimestamp(file_info[1]).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files_pdf.append((file_name, create_time, file_info[2]))  # (文件名, 创建时间, 文件路径)
+                    # 从缓存的索引字典中检查有没有对应的idw文件
+                    p_number = file_name[:9]  # 获取文件名的前9个字符作为part number
+                    # 检查idw索引字典，没有则返回空字符串
+                    idw_exist = idw_index.get(p_number, "")
+                    result_files_pdf.append((file_name, create_time, file_info[2], idw_exist))  # (文件名，创建时间，文件路径，idw文件路径)
                 elif (file_name.endswith(".iam") or file_name.endswith(".ipt")) and match_func(file_name):
                     # 格式化创建时间
                     create_time = datetime.datetime.fromtimestamp(file_info[1]).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files_3d.append((file_name, create_time, file_info[2]))  # (文件名, 创建时间, 文件路径)
+                    # 从缓存的索引字典中检查有没有对应的idw文件
+                    p_number = file_name[:9]  # 获取文件名的前9个字符作为part number
+                    # 检查idw索引字典，没有则返回空字符串
+                    idw_exist = idw_index.get(p_number, "")
+                    result_files_3d.append((file_name, create_time, file_info[2], idw_exist))  # (文件名，创建时间，文件路径，idw文件路径)
 
         if stop_event.is_set():  # 检查停止标志并返回
             return
@@ -759,7 +819,7 @@ def search_files_thread(query, search_directory, search_type):
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
 
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
+        root.after(0, lambda e=e: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -1096,7 +1156,8 @@ def search_vault_cache_thread(query, search_directory):
                 if (file.endswith(".iam") or file.endswith(".ipt")) and match_func(file):
                     file_path = os.path.join(root_dir, file)
                     create_time = datetime.datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
-                    result_files.append((file, create_time, file_path))
+                    placeholder = "" # 对于Vault缓存搜索，没有对应的idw文件，最后一段用空字符串占位，便于在treeview中处理
+                    result_files.append((file, create_time, file_path, placeholder))
 
         if stop_event.is_set():  # 检查停止标志并返回
             return
@@ -1111,7 +1172,7 @@ def search_vault_cache_thread(query, search_directory):
         root.after(0, lambda: show_result_list(result_files))
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
+        root.after(0, lambda e=e: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -1317,7 +1378,7 @@ def search_partname_thread(query, partname_dat):
         root.after(0, lambda: enable_search_button())  # 启用搜索按钮
 
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
+        root.after(0, lambda e=e: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_search']}: {e}"))
 
     finally:
         active_threads.discard(thread)  # 线程结束后移除
@@ -1406,86 +1467,78 @@ def sort_treeview(col, columns):
         results_tree.heading(c, text=c)  # 先重置所有表头
     results_tree.heading(col, text=col + arrow, command=lambda: sort_treeview(col, columns))
 
-def setup_hover_tooltip():
-    """设置鼠标悬停在results_tree的第二列时弹出浮动窗口，用于partname过长时显示完整内容"""
-    # 记录上一次鼠标所在的条目 ID（用于避免重复触发）
-    last_hovered_item = None
+def setup_click_tooltip():
+    """设置鼠标点击results_tree的第二列时弹出浮动窗口，用于partname过长时显示完整内容"""
+    # 记录上一次鼠标所点击的条目 ID（用于避免重复触发）
+    last_clicked_item = None
     # 提示窗口和标签
-    hover_win = None
-    hover_label = None
-    hover_after_id = None  # 用于取消延迟任务
-    pending_text = ""      # 存储准备显示的文字
+    tip_win = None
+    tip_label = None
+    tip_text = ""      # 存储准备显示的文字
 
-    def on_mouse_motion(event):
+    def on_click(event):
         """鼠标移动事件处理函数"""
-        nonlocal last_hovered_item, hover_win, hover_label, hover_after_id, pending_text
+        nonlocal last_clicked_item, tip_win, tip_label, tip_text
 
         # 获取鼠标当前所处的区域（如 cell, heading 等）
         region = results_tree.identify("region", event.x, event.y)
-        # 获取鼠标当前处于哪一列（例如 "#2" 表示第二列）
+        # 获取鼠标当前点击的哪一列（例如 "#2" 表示第二列）
         col = results_tree.identify_column(event.x)
 
-        # 仅当鼠标悬停在“第二列的单元格”时才显示提示
+        # 仅当鼠标点击在“第二列的单元格”时才显示提示
         if region == "cell" and col == "#2":
             item_id = results_tree.identify_row(event.y)
 
-            # 如果鼠标进入了新的单元格（不是上一次的），则更新提示
-            if item_id and item_id != last_hovered_item:
-                last_hovered_item = item_id
-                # 每次移动到新单元格时取消旧的定时器和提示
-                if hover_after_id:
-                    results_tree.after_cancel(hover_after_id)
-                    hover_after_id = None
-                hide_hover()
+            # 如果鼠标点击了新的单元格（不是上一次的），则更新提示
+            if item_id and item_id != last_clicked_item:
+                last_clicked_item = item_id
+                hide_tip()
                 values = results_tree.item(item_id, 'values')
 
                 # 确保第二列存在内容
                 if len(values) > 1 and values[1].strip():
-                    pending_text = values[1].strip()  # 第二列的内容作为提示文本
+                    tip_text = values[1].strip()  # 第二列的内容作为提示文本
 
-                    # 延迟 500 毫秒后显示窗口
-                    hover_after_id = results_tree.after(500, lambda: show_hover(event.x_root, event.y_root, pending_text))
+                    # 延迟 200 毫秒后显示窗口
+                    results_tree.after(200, lambda: show_tip(event.x_root, event.y_root, tip_text))
                 else:
                     # 如果第二列没有内容，隐藏提示窗口
-                    hide_hover()
+                    hide_tip()
         else:
             # 如果鼠标不在第二列或不在 cell 区域，重置状态并隐藏提示
-            last_hovered_item = None
-            pending_text = ""
-            if hover_after_id:
-                results_tree.after_cancel(hover_after_id)
-                hover_after_id = None
-            hide_hover()
+            last_clicked_item = None
+            tip_text = ""
+            hide_tip()
 
-    def show_hover(x_root, y_root, text):
+    def show_tip(x_root, y_root, text):
         """显示提示窗口"""
-        nonlocal hover_win, hover_label
+        nonlocal tip_win, tip_label
         # 获取屏幕上的鼠标位置，稍微偏移避免挡住指针
         x = x_root + 10
         y = y_root + 10
 
-        hover_win = tk.Toplevel(results_tree)
-        hover_win.overrideredirect(True)    # 无边框
-        hover_win.attributes("-topmost", True)  # 保持最前
-        hover_win.geometry(f"+{x}+{y}")
+        tip_win = tk.Toplevel(results_tree)
+        tip_win.overrideredirect(True)    # 无边框
+        tip_win.attributes("-topmost", True)  # 保持最前
+        tip_win.geometry(f"+{x}+{y}")
 
-        hover_label = ttk.Label(
-            hover_win, text=text,
+        tip_label = ttk.Label(
+            tip_win, text=text,
             relief="solid", borderwidth=1,
             background="#ffffe0", padding=(5, 2)
         )
-        hover_label.pack()
+        tip_label.pack()
 
-    def hide_hover(event=None):
+    def hide_tip(event=None):
         """隐藏提示窗口"""
-        nonlocal hover_win
-        if hover_win and hover_win.winfo_exists():
-            hover_win.destroy()
-            hover_win = None
+        nonlocal tip_win
+        if tip_win and tip_win.winfo_exists():
+            tip_win.destroy()
+            tip_win = None
 
-    # 绑定事件：鼠标移动和离开时触发相应事件
-    results_tree.bind("<Motion>", on_mouse_motion)
-    results_tree.bind("<Leave>", hide_hover)
+    # 绑定事件：鼠标点击和离开时触发相应事件
+    results_tree.bind("<Button-1>", on_click)
+    results_tree.bind("<Leave>", hide_tip)
 
 def show_result_list(result_files, search_type=None):
     """显示搜索结果"""
@@ -1548,6 +1601,7 @@ def show_result_list(result_files, search_type=None):
     # 添加 Treeview 控件显示结果
     if search_type == "name":
         # 如果是part name搜索，显示part name相关信息
+        # 定义列表表头
         columns = (LANGUAGES[current_language]['part_no'], LANGUAGES[current_language]['name'], "PDF", "IPT", "IAM", LANGUAGES[current_language]['drawing'])
         results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
         results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
@@ -1563,7 +1617,8 @@ def show_result_list(result_files, search_type=None):
         results_tree.column("IAM", width=0, stretch=tk.NO)
         results_tree.column(LANGUAGES[current_language]['drawing'], width=int(70*sf), anchor="w")
     else:
-        columns = (LANGUAGES[current_language]['file_name'], LANGUAGES[current_language]['created_time'], "Path")
+        # 定义列表表头
+        columns = (LANGUAGES[current_language]['file_name'], LANGUAGES[current_language]['created_time'], "Path", "IDW")
         results_tree = ttk.Treeview(result_frame, columns=columns, show="headings")
         results_tree.pack(fill=tk.BOTH, expand=True, padx=(int(17*sf), 0), pady=0)
         # 在 results_tree 上存储排序状态
@@ -1572,7 +1627,8 @@ def show_result_list(result_files, search_type=None):
             results_tree.heading(col, text=col, anchor="w", command=lambda c=col: sort_treeview(c, columns))
         results_tree.column(LANGUAGES[current_language]['file_name'], width=int(150*sf), anchor="w")
         results_tree.column(LANGUAGES[current_language]['created_time'], width=int(135*sf), anchor="w")
-        results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列
+        results_tree.column("Path", width=0, stretch=tk.NO)  # 隐藏第三列pdf文件路径
+        results_tree.column("IDW", width=0, stretch=tk.NO)  # 隐藏第四列idw文件路径
 
     # 创建一个垂直滚动条并将其与 Treeview 关联
     scrollbar = ttk.Scrollbar(result_frame, orient=tk.VERTICAL, command=results_tree.yview)
@@ -1585,7 +1641,7 @@ def show_result_list(result_files, search_type=None):
             # 如果是part name搜索，插入part name相关信息
             results_tree.insert("", tk.END, values=(item[0], item[1], item[2], item[3], item[4], item[5]), tags=(tag,))
         else:
-            results_tree.insert("", tk.END, values=(item[0], item[1], item[2]), tags=(tag,))
+            results_tree.insert("", tk.END, values=(item[0], item[1], item[2], item[3]), tags=(tag,))
     
     results_tree.tag_configure('evenrow', background='#E6F7FF')
     results_tree.tag_configure('oddrow', background='white')
@@ -1629,7 +1685,7 @@ def show_result_list(result_files, search_type=None):
         results_tree.selection_set(first_item)
 
     if search_type == "name":
-        setup_hover_tooltip()  # 如果part name名字过长，通过鼠标悬停显示完整名字
+        setup_click_tooltip()  # 如果part name名字过长，通过鼠标悬停显示完整名字
 
 def on_right_click(event):
     """给 Treeview 添加右键菜单"""
@@ -1641,10 +1697,17 @@ def on_right_click(event):
 
     results_tree.selection_set(item)
     # 根据results_tree的列数，添加不同的右键菜单选项
-    # 如果是pdf或者3d搜索，添加打开文件和打开文件所在目录的选项
-    # 如果是part name搜索，添加打开PDF、IPT、IAM文件的选项
-    if len(results_tree["columns"]) == 3:
+    # 如果是pdf或者3d搜索，添加打开文件和打开文件所在目录，以及打开idw文件和复制part number的选项
+    # 如果是part name搜索，添加打开PDF、IPT、IAM文件，以及复制part number和part name的选项
+    if len(results_tree["columns"]) == 4:
+        file_name = results_tree.item(item, 'values')[0]
+        part_number = file_name.split(".")[0] # 取不含扩展名的文件名作为part number
+        if len(part_number) > 15:
+            display_part_number = part_number[:12] + "..."
+        else:
+            display_part_number = part_number
         file_path = results_tree.item(item, 'values')[2]
+        idw_path = results_tree.item(item, 'values')[3]
         # 打开文件
         def open_file_right_menu():
             if os.path.exists(file_path):
@@ -1660,8 +1723,25 @@ def on_right_click(event):
                 # 使用 explorer /select 来选中文件
                 subprocess.run(["explorer", "/select,", file_path])
         menu.add_command(label=LANGUAGES[current_language]['open_file_location'], command=open_file_location)
+
+        # 打开IDW文件
+        if idw_path:
+            def open_idw():
+                if os.path.exists(idw_path):
+                    os.startfile(idw_path)
+                else:
+                    show_warning_message(f"{LANGUAGES[current_language]['idw_not_found']}: {idw_path}", "red")
+            menu.add_command(label=LANGUAGES[current_language]['open_idw'], command=open_idw)
+        
+        # 复制Part Number
+        def copy_part_number():
+            root.clipboard_clear()
+            root.clipboard_append(part_number)
+        menu.add_command(label=f'{LANGUAGES[current_language]['copy']} "{display_part_number}"', command=copy_part_number)
     elif len(results_tree["columns"]) == 6:
-        # 如果是part name搜索，添加打开PDF、IPT、IAM的选项
+        # 如果是part name搜索，添加打开PDF、IPT、IAM的选项，和复制Part Number和Part Name的选项
+        part_number = results_tree.item(item, 'values')[0]
+        part_name = results_tree.item(item, 'values')[1]
         pdf_path = results_tree.item(item, 'values')[2]
         ipt_path = results_tree.item(item, 'values')[3]
         iam_path = results_tree.item(item, 'values')[4]
@@ -1689,6 +1769,13 @@ def on_right_click(event):
                 else:
                     show_warning_message(f"{LANGUAGES[current_language]['iam_not_found']}: {iam_path}", "red")
             menu.add_command(label=LANGUAGES[current_language]['open_iam'], command=open_iam)
+
+        # 复制Part Number和Part Name
+        def copy_part_number_name():
+            part_number_name = f"{part_number} - {part_name}"
+            root.clipboard_clear()
+            root.clipboard_append(part_number_name)
+        menu.add_command(label=f'{LANGUAGES[current_language]['copy']} Part No. & Name', command=copy_part_number_name)
 
     menu.post(event.x_root, event.y_root)
 
@@ -2025,7 +2112,7 @@ def send_email():
     """打开默认邮件客户端发送邮件"""
     import webbrowser
     try:
-        webbrowser.open("mailto:wtweitang@hotmail.com?subject=Drawing%20Finder%20Feedback")
+        webbrowser.open(f"mailto:wtweitang@hotmail.com?subject=Drawing%20Finder%20Feedback%20v{ver}")
     except Exception as e:
         messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_email']}: {e}")
 
