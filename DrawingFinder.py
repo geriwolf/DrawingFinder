@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.5.0"  # 版本号
+ver = "1.5.1"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -264,7 +264,7 @@ def open_file(event=None, file_path=None):
         if not selected_item or not results_tree.exists(selected_item[0]):
             return
         # 判断results_tree的列数，获取默认文件路径
-        if len(results_tree["columns"]) == 3:
+        if len(results_tree["columns"]) == 4:
             file_path = results_tree.item(selected_item[0], 'values')[2]  # 获取文件路径
         elif len(results_tree["columns"]) == 6:
             values = results_tree.item(selected_item[0], 'values')
