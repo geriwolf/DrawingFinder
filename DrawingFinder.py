@@ -2206,6 +2206,8 @@ def change_about_symbol_color():
         new_available, _, _  = fetch_update_thread()  # 获取新版本信息
         if new_available == 1:
             root.after(0, lambda: about_label.config(foreground="dodgerblue"))  # 有新版本，变为蓝色
+            about_label.tooltip.hide_tooltip()  # 在重新创建tooltip实例前，隐藏之前的tooltip窗口
+            Tooltip(about_label, lambda: LANGUAGES[current_language]['new_version'], delay=500)
 
     except Exception as e:
         print(f"Update check failed: {e}")
@@ -2855,7 +2857,8 @@ try:
     about_frame.config(width=int(345*sf), height=int(35*sf))  # 设置frame大小
     about_label = ttk.Label(about_frame, text="ⓘ", style="About.TLabel", cursor="hand2")
     about_label.pack(side=tk.RIGHT, padx=int(10*sf), pady=(int(3*sf), int(4*sf)))
-    Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
+    # 实例化 Tooltip 并绑定到 about_label
+    about_label.tooltip = Tooltip(about_label, lambda: LANGUAGES[current_language]['tip_about'], delay=500)
     about_label.bind("<Button-1>", lambda event: show_about())
     root.bind("<Alt-a>", lambda event: show_about())
 
