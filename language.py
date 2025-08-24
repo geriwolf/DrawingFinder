@@ -105,6 +105,7 @@ LANGUAGES = {
         "update_check_failed": "Update check failed. Please try again later.",
         "cpoied_part_number": "Tip: Click the button to search the copied part number.",
         "new_version": "New version available!\rShortcut keys: Alt+A",
+        "check_network": "is not accessible. Please check network.",
     },
     "fr": {
         "input": "N° Pièce / Assemblage / Projet :",
@@ -211,5 +212,6 @@ LANGUAGES = {
         "update_check_failed": "Échec de la mise à jour. Réessayez plus tard.",
         "cpoied_part_number": "Astuce: Cliquez pour rechercher le numéro copié.",
         "new_version": "Nouvelle version disponible!\rRaccourcis clavier: Alt+A",
+        "check_network": "n'est pas accessible. Veuillez vérifier le réseau.",
     }
 }

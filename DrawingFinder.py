@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.5.1"  # 版本号
+ver = "1.5.2"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -655,7 +655,10 @@ def search_files(query, search_type=None):
         search_directory = os.path.join(default_parts_path, prefix)
 
     if not os.path.exists(search_directory):
-        show_warning_message(f"{LANGUAGES[current_language]['path_not_exist']} {search_directory}", "red")
+        if not changed_parts_path and not os.path.exists(default_parts_path):
+            show_warning_message(f"{default_parts_path} {LANGUAGES[current_language]['check_network']}", "red")
+        else:
+            show_warning_message(f"{LANGUAGES[current_language]['path_not_exist']} {search_directory}", "red")
         show_result_list(None) # 目录不存在就清空已有搜索结果
         enable_search_button() # 启用搜索按钮
         last_query = None
