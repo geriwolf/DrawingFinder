@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.5.3"  # 版本号
+ver = "1.5.4"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -236,9 +236,9 @@ def open_shortcut(index):
                 # 如果是文件，通过 open_file 打开
                 open_file(file_path=path)
         except Exception as e:
-            messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_to_open_shortcut']}: {e}")
+            messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_to_open_shortcut']}\r{e}")
     else:
-        messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['shortcut_not_exist']}: {path}")
+        messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['path_not_found']}\r{path}")
 
 def update_directory():
     """更新搜索目录"""

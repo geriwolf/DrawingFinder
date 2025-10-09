@@ -70,9 +70,9 @@ def generate_partname_dat(partname_dat, parts_path, callback=None):
             revision = extract_revision(stp_file)
             stp_path = os.path.join(root, stp_file)
             description = extract_description_from_stp(stp_path)
-            # 处理STP文件中的直径符号显示问题，如果description中有\X\D，替换为直径符号Ø
-            if r"\X\D" in description:
-                description = description.replace(r"\X\D", "Ø")
+            # 处理STP文件中的直径符号显示问题，如果description中有\X\D8，替换为直径符号Ø
+            if r"\X\D8" in description:
+                description = description.replace(r"\X\D8", "Ø")
             entry = {
                 "id": part_number,
                 "rev": revision,
