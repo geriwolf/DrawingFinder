@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.5.4"  # 版本号
+ver = "1.5.5"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -1304,6 +1304,32 @@ def search_partname():
             show_warning_message(LANGUAGES[current_language]['invalid_characters'], "red")
             enable_search_button() # 启用搜索按钮
             return
+        
+        if query == "deleteme":
+            # 特殊命令，用户输入“deleteme”搜索时，删除当前的partname.dat文件并重新生成最新的
+            # 先清除已读取的partname 数据
+            if 'search_partname' in globals() and hasattr(search_partname, 'data'):
+                del search_partname.data
+            deldata = messagebox.askokcancel(
+                LANGUAGES[current_language]['partname_delete_confirm_1'],
+                LANGUAGES[current_language]['partname_delete_confirm_2']
+            )
+
+            # 如果点击确认按钮就删除文件并重新生成
+            if deldata:
+                try:
+                    os.remove(partname_dat)
+                except Exception as e:
+                    messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['error_delete_partname']}: {e}")
+                else:
+                    # 如果删除成功，重新生成partname.dat
+                    gen_partname(partname_dat, "regen")
+                finally:
+                    entry.delete(0, tk.END)  # 清空输入框
+                    enable_search_button()  # 启用搜索按钮
+            else:
+                enable_search_button()  # 启用搜索按钮
+            return
 
         save_search_history(query)  # 保存搜索记录
         last_query = None
@@ -1386,15 +1412,16 @@ def search_partname_thread(query, partname_dat):
     finally:
         active_threads.discard(thread)  # 线程结束后移除
 
-def gen_partname(partname_dat):
+def gen_partname(partname_dat, flag=None):  # 传入flag参数用于区分是否是重新生成
     """后台生成 partname.dat"""
     thread_name = "gen_partname_thread"
 
     def on_done():
         hide_warning_message()  # 隐藏生成中提示
-        messagebox.showinfo("Part Name", f"{LANGUAGES[current_language]['partname_generated']}\n\n"
+        messagebox.showinfo(f"{LANGUAGES[current_language]['partnamedata']}", 
+                            f"{LANGUAGES[current_language]['partname_generated']}\n\n"
                             f"{LANGUAGES[current_language]['file_path']}\n{partname_dat}\n\n"
-                            f"{LANGUAGES[current_language]['delete_data']}")
+                            f"{LANGUAGES[current_language]['regen_data']}")
 
     def run():
         if changed_parts_path:
@@ -1413,12 +1440,15 @@ def gen_partname(partname_dat):
         show_warning_message(LANGUAGES[current_language]['partname_generating'], "blue")
         return
 
-    # 提示用户第一次搜索Part Name，没有part name数据文件，将在后台生成
-    answer = messagebox.askokcancel(
-        f"{LANGUAGES[current_language]['first_partname_1']}",
-        f"{LANGUAGES[current_language]['first_partname_2']}\n\n"
-        f"{LANGUAGES[current_language]['first_partname_3']}"
-    )
+    if not flag:
+        # 提示用户没有part name数据文件，将在后台生成
+        answer = messagebox.askokcancel(
+            f"{LANGUAGES[current_language]['generate_partname_1']}",
+            f"{LANGUAGES[current_language]['generate_partname_2']}\n\n"
+            f"{LANGUAGES[current_language]['generate_partname_3']}"
+        )
+    else:
+        answer = True  # 通过输入deleteme来重新生成时，不显示该提示
     if answer:
         thread = threading.Thread(target=run, daemon=True)
         thread.name = thread_name

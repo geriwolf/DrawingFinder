@@ -49,6 +49,23 @@ def find_highest_revision_file(files):
                 rev_map[base] = (0, f)
     return [v[1] for v in rev_map.values()]
 
+def decode_stp_symbol(text):
+    """将 STP 中的转义序列解码为对应的 Unicode 字符"""
+    if not text:
+        return text
+    # 处理形如 \X2\hhhh\X0\ 的长格式(hhhh 为 4 位十六进制，表示 Unicode 码点)
+    # 例如: \X2\201D\X0\ 表示”
+    def _repl_long(m):
+        try:
+            return chr(int(m.group(1), 16))
+        except Exception:
+            return m.group(0)
+    text = re.sub(r'\\X2\\([0-9A-Fa-f]{4})\\X0\\', _repl_long, text)
+    # 处理形如 \X\hh 的短格式(hh 为 2 位十六进制，单字节)
+    # 例如: \X\D8 表示Ø
+    text = re.sub(r'\\X\\([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), text)
+    return text
+
 def generate_partname_dat(partname_dat, parts_path, callback=None):
     """后台生成 partname.dat 并在完成后调用回调"""
 
@@ -70,9 +87,8 @@ def generate_partname_dat(partname_dat, parts_path, callback=None):
             revision = extract_revision(stp_file)
             stp_path = os.path.join(root, stp_file)
             description = extract_description_from_stp(stp_path)
-            # 处理STP文件中的直径符号显示问题，如果description中有\X\D8，替换为直径符号Ø
-            if r"\X\D8" in description:
-                description = description.replace(r"\X\D8", "Ø")
+            # 处理STP文件中的一些特殊符号显示
+            description = decode_stp_symbol(description)
             entry = {
                 "id": part_number,
                 "rev": revision,
