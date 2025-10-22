@@ -633,7 +633,7 @@ def search_files(query, search_type=None):
     
     
     if not query:
-        show_warning_message(LANGUAGES[current_language]['enter_number'], "red")
+        show_warning_message(LANGUAGES[current_language]['input_number'], "red")
         enable_search_button() # 启用搜索按钮
         last_query = None
         return
@@ -934,7 +934,7 @@ def search_vault_cache():
     hide_warning_message()  # 清除警告信息
     query = entry.get().strip() # 去除首尾空格
     if not query:
-        show_warning_message(LANGUAGES[current_language]['enter_number'], "red")
+        show_warning_message(LANGUAGES[current_language]['input_number'], "red")
         enable_search_button() # 启用搜索按钮
         return
     
@@ -1295,7 +1295,7 @@ def search_partname():
         hide_warning_message()  # 清除警告信息
         query = entry.get().strip().lower() # 去除首尾空格
         if not query:
-            show_warning_message(LANGUAGES[current_language]['enter_number'], "red")
+            show_warning_message(LANGUAGES[current_language]['input_number'], "red")
             enable_search_button() # 启用搜索按钮
             return
         
