@@ -53,14 +53,22 @@ def decode_stp_symbol(text):
     """将 STP 中的转义序列解码为对应的 Unicode 字符"""
     if not text:
         return text
-    # 处理形如 \X2\hhhh\X0\ 的长格式(hhhh 为 4 位十六进制，表示 Unicode 码点)
-    # 例如: \X2\201D\X0\ 表示”
+
+    # 处理形如 \X2\hhhh...\X0\ 或 \X2\hhhhhhhh...\X0\ 的长格式(hhhh 为 4 位十六进制，表示 Unicode 码点)
+    # 例如: \X2\201D\X0\ 表示”，\X2\20192019\X0\ 表示’’
     def _repl_long(m):
-        try:
-            return chr(int(m.group(1), 16))
-        except Exception:
-            return m.group(0)
-    text = re.sub(r'\\X2\\([0-9A-Fa-f]{4})\\X0\\', _repl_long, text)
+        hex_str = m.group(1)
+        chars = []
+        # 按每 4 个 hex 拆分
+        for i in range(0, len(hex_str), 4):
+            try:
+                chars.append(chr(int(hex_str[i:i+4], 16)))
+            except Exception:
+                chars.append('?')  # 出错时用 ? 替代
+        return ''.join(chars)
+
+    text = re.sub(r'\\X2\\([0-9A-Fa-f]+)\\X0\\', _repl_long, text)
+
     # 处理形如 \X\hh 的短格式(hh 为 2 位十六进制，单字节)
     # 例如: \X\D8 表示Ø
     text = re.sub(r'\\X\\([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), text)
@@ -89,6 +97,9 @@ def generate_partname_dat(partname_dat, parts_path, callback=None):
             description = extract_description_from_stp(stp_path)
             # 处理STP文件中的一些特殊符号显示
             description = decode_stp_symbol(description)
+            # 处理连续单引号显示问题
+            if r"''''" in description:
+               description = description.replace(r"''''", "''")
             entry = {
                 "id": part_number,
                 "rev": revision,
@@ -126,7 +137,7 @@ def generate_partname_dat(partname_dat, parts_path, callback=None):
 
     dat_path = partname_dat
     with open(dat_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
+        json.dump(result, f, indent=2, ensure_ascii=False, default=str)
 
     # 显示生成时间，调试完成后可删除
     elapsed = time.time() - start_time

@@ -13,6 +13,8 @@ import subprocess
 import locale
 import urllib.request
 import json
+import ssl
+import certifi
 import webbrowser
 from tkinter import filedialog
 from tkinter import Menu, ttk
@@ -29,7 +31,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.5.5"  # 版本号
+ver = "1.5.6"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -2152,14 +2154,25 @@ def send_email():
 def check_for_updates():
     """检查更新，返回最新版本号和下载链接"""
     try:
-        with urllib.request.urlopen(release_url, timeout=10) as response:
+        # 创建一个使用 certifi 证书的 SSL 上下文
+        context = ssl.create_default_context(cafile=certifi.where())
+
+        # 在 urlopen 中传入 context 参数，确保使用 certifi 证书进行 HTTPS 请求
+        with urllib.request.urlopen(release_url, timeout=10, context=context) as response:
             data = json.load(response)
             latest_ver = data["tag_name"].lstrip("v")  # 获取最新版本号，如"v1.3.9" -> "1.3.9"
+            # 如果没有资源文件，返回None
+            if not data["assets"]:
+                return latest_ver, None
             # 获取匿名跳转链接（点击后 GitHub 会重定向到 CDN加速地址）
             url = data["assets"][0]["url"]  # 获取资源链接
-            headers = {"Accept": "application/octet-stream"}  # 设置 Accept 头部
+            # 设置 Accept 头部
+            headers = {
+                "User-Agent": "DrawingFinder",
+                "Accept": "application/octet-stream"
+            }
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req) as dl_response:
+            with urllib.request.urlopen(req, context=context) as dl_response:
                 # 最终跳转的真实下载地址
                 download_url = dl_response.geturl()
             return latest_ver, download_url
