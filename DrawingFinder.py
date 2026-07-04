@@ -31,7 +31,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 # 全局变量
-ver = "1.5.6"  # 版本号
+ver = "1.5.7"  # 版本号
 current_language = "en"  # 当前语言（默认英文）
 previous_language = None # 切换语言前的上一个语言
 search_history = []  # 用于存储最近的搜索记录，最多保存20条
@@ -232,8 +232,15 @@ def open_shortcut(index):
         
         try:
             if os.path.isdir(path):
-                # 如果是目录，打开目录
-                os.startfile(path)
+                # 如果是目录，在后台线程中打开，避免主线程阻塞
+                def open_dir_in_background():
+                    try:
+                        os.startfile(path)
+                    except Exception as e:
+                        root.after(0, lambda: messagebox.showerror(LANGUAGES[current_language]['error'], f"{LANGUAGES[current_language]['failed_to_open_shortcut']}\r{e}"))
+                
+                thread = threading.Thread(target=open_dir_in_background, daemon=True)
+                thread.start()
             else:
                 # 如果是文件，通过 open_file 打开
                 open_file(file_path=path)
@@ -277,7 +284,15 @@ def open_file(event=None, file_path=None):
 
     if file_path and os.path.exists(file_path):
         try:
-            os.startfile(file_path)
+            # 在后台线程中打开文件，避免主线程阻塞导致程序无响应
+            def open_file_in_background():
+                try:
+                    os.startfile(file_path)
+                except Exception as e:
+                    root.after(0, lambda: show_warning_message(f"{LANGUAGES[current_language]['failed_to_open_file']}: {e}", "red"))
+            
+            thread = threading.Thread(target=open_file_in_background, daemon=True)
+            thread.start()
         except Exception as e:
             show_warning_message(f"{LANGUAGES[current_language]['failed_to_open_file']}: {e}", "red")
     else:
